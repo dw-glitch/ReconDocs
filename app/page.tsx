@@ -337,7 +337,7 @@ function rowToRecord(upload: UploadData, row: unknown[], rowIndex: number) {
   const map = sheet.mapping;
   const value = (field: FieldName) => map[field] >= 0 ? row[map[field]] : "";
   const referenceValue = text(value("document"));
-  const parsedReference = parseDocumentReference(referenceValue, value("revision"));
+  const parsedReference = parseDocumentReference(referenceValue, text(value("revision")));
   const code = parsedReference.code;
   if (!code || normalizedHeader(code) === "DOCUMENTO" || norm(code) === "FIM" || !looksLikeDocument(code)) return null;
   return {
@@ -543,7 +543,7 @@ async function exportWorkbook(results: AnalysisItem[], metrics: AnalysisMetrics,
     header.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: white } };
       const differenceColumns = new Set([8, 9]);
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: differenceColumns.has(cell.col) ? amber : navy } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: differenceColumns.has(Number(cell.col)) ? amber : navy } };
       cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
     });
     sheet.addRows(items.map(reportRow));
@@ -810,7 +810,7 @@ export default function Home() {
       }
       setProgress({ value: 88, label: "Ligando os códigos pelo mesmo tag" });
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      const completeOutput = analyzeDatasets(datasets) as AnalysisOutput;
+      const completeOutput = analyzeDatasets(datasets) as unknown as AnalysisOutput;
       const scopedResults = completeOutput.results.filter((item) => {
         if (documentScope === "all") return true;
         if (item.documentKind !== documentScope) return false;
