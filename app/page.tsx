@@ -16,7 +16,6 @@ import {
   FileSpreadsheet,
   Filter,
   LoaderCircle,
-  LockKeyhole,
   RotateCcw,
   Search,
   Settings2,
@@ -166,10 +165,10 @@ const ALIASES: Record<FieldName, string[]> = {
   allocationNumber: ["ALOCACAO", "NUMERO DA ALOCACAO", "N DA ALOCACAO", "CODIGO DA ALOCACAO"],
 };
 
-const FILE_META: Record<Role, { number: string; title: string; subtitle: string }> = {
-  sgp: { number: "01", title: "Lista do SGP", subtitle: "Relação de documentos cadastrados no SGP" },
-  sigem: { number: "02", title: "Consulta Geral do SIGEM", subtitle: "Exportação completa da consulta geral" },
-  planned: { number: "03", title: "Documentos previstos", subtitle: "Mostra como o tag foi alocado e se essa forma foi postada" },
+const FILE_META: Record<Role, { number: string; title: string }> = {
+  sgp: { number: "01", title: "Lista do SGP" },
+  sigem: { number: "02", title: "Consulta Geral do SIGEM" },
+  planned: { number: "03", title: "Documentos previstos" },
 };
 
 const FIELD_LABELS: Record<FieldName, string> = {
@@ -181,11 +180,11 @@ const FIELD_LABELS: Record<FieldName, string> = {
   allocationNumber: "Número da alocação",
 };
 
-const SCOPE_OPTIONS: { key: DocumentScope; label: string; description: string }[] = [
-  { key: "all", label: "Todos", description: "ET, CV e N-1710" },
-  { key: "et", label: "Somente ET", description: "Relatórios codificados pela ET" },
-  { key: "cv", label: "Somente CV", description: "Currículos com grupo CV" },
-  { key: "n1710", label: "Somente N-1710", description: "Documentos técnicos de projeto" },
+const SCOPE_OPTIONS: { key: DocumentScope; label: string }[] = [
+  { key: "all", label: "Todos" },
+  { key: "et", label: "ET" },
+  { key: "cv", label: "CV" },
+  { key: "n1710", label: "N-1710" },
 ];
 
 const SCOPE_LABELS: Record<DocumentScope, string> = {
@@ -617,10 +616,7 @@ function UploadCard({ role, value, busy, onUpload, onRemove, onSheet, onMapping 
     <article className={`upload-card ${value ? "has-file" : ""}`}>
       <div className="upload-card-heading">
         <span className="step-number">{meta.number}</span>
-        <div>
-          <h3>{meta.title}</h3>
-          <p>{meta.subtitle}</p>
-        </div>
+        <h3>{meta.title}</h3>
       </div>
 
       {!value ? (
@@ -634,8 +630,7 @@ function UploadCard({ role, value, busy, onUpload, onRemove, onSheet, onMapping 
           disabled={busy}
         >
           <UploadCloud size={23} strokeWidth={1.8} />
-          <span>Arraste a planilha ou <strong>selecione</strong></span>
-          <small>.xlsx, .xls ou .csv</small>
+          <span>Arraste ou <strong>selecione a planilha</strong></span>
         </button>
       ) : (
         <div className="file-loaded">
@@ -864,6 +859,8 @@ export default function Home() {
     return filterResults(analysis.results, filter, "").length;
   };
 
+  const uploadCount = Object.keys(uploads).length;
+
   return (
     <main>
       <header className="topbar">
@@ -874,28 +871,13 @@ export default function Home() {
           </span>
           <span className="brand-copy"><b><span>RECON</span><em>DOCS</em></b><small>CONFERÊNCIA SGP × SIGEM</small></span>
         </a>
-        <div className="privacy"><LockKeyhole size={15} /> Processamento local e seguro</div>
+        {uploadCount > 0 && <button type="button" className="quiet-button" onClick={reset}><RotateCcw size={15} /> Limpar</button>}
       </header>
 
-      <section className="hero" id="top">
-        <div className="hero-copy">
-          <span className="eyebrow">RECONDOCS · CONFERÊNCIA DOCUMENTAL</span>
-          <h1>Descubra como cada tag foi alocado e qual forma chegou ao SIGEM.</h1>
-          <p>O ReconDocs liga códigos diferentes pelo mesmo <b>tag do documento</b>, preserva as revisões e mostra se nenhuma, uma ou as duas formas foram postadas.</p>
-        </div>
-        <aside className="method-card">
-          <CircleCheck size={20} />
-          <div><b>Correspondência pelo tag</b><span>Identifica alterações de código entre revisões, inclusive a diferença com/sem nt-.</span></div>
-        </aside>
-      </section>
-
-      <section className="workspace-section" aria-labelledby="upload-title">
+      <section className="workspace-section" id="top" aria-labelledby="upload-title">
         <div className="section-heading">
-          <div>
-            <span className="section-kicker">ENTRADAS</span>
-            <h2 id="upload-title">Carregue as três fontes</h2>
-          </div>
-          {Object.keys(uploads).length > 0 && <button type="button" className="quiet-button" onClick={reset}><RotateCcw size={15} /> Limpar tudo</button>}
+          <h1 id="upload-title">Planilhas</h1>
+          <span className="upload-count">{uploadCount}/3 carregadas</span>
         </div>
 
         <div className="upload-grid">
@@ -913,56 +895,50 @@ export default function Home() {
           ))}
         </div>
 
-        <div className="scope-selector" aria-labelledby="scope-title">
-          <div className="scope-heading">
-            <span className="section-kicker">ESCOPO DA BUSCA</span>
-            <b id="scope-title">Quais documentos deseja comparar?</b>
-          </div>
-          <div className="scope-options">
-            {SCOPE_OPTIONS.map((option) => (
-              <button
-                key={option.key}
-                type="button"
-                className={documentScope === option.key ? "active" : ""}
-                aria-pressed={documentScope === option.key}
-                onClick={() => {
-                  setDocumentScope(option.key);
-                  if (option.key !== "et") setEtScope("all");
-                  setAnalysis(null);
-                }}
-              >
-                <b>{option.label}</b>
-                <span>{option.description}</span>
-              </button>
-            ))}
-          </div>
-          {documentScope === "et" && (
-            <div className="et-scope" aria-label="Tipo de documento ET">
-              <span>Dentro de ET:</span>
-              {ET_SCOPE_OPTIONS.map((option) => (
+        <div className="control-panel" aria-labelledby="scope-title">
+          <div className="scope-group">
+            <b className="control-label" id="scope-title">Documentos</b>
+            <div className="scope-options">
+              {SCOPE_OPTIONS.map((option) => (
                 <button
                   key={option.key}
                   type="button"
-                  className={etScope === option.key ? "active" : ""}
-                  aria-pressed={etScope === option.key}
-                  onClick={() => { setEtScope(option.key); setAnalysis(null); }}
+                  className={documentScope === option.key ? "active" : ""}
+                  aria-pressed={documentScope === option.key}
+                  onClick={() => {
+                    setDocumentScope(option.key);
+                    if (option.key !== "et") setEtScope("all");
+                    setAnalysis(null);
+                  }}
                 >
-                  {option.label}
+                  <b>{option.label}</b>
                 </button>
               ))}
             </div>
-          )}
+            {documentScope === "et" && (
+              <div className="et-scope" aria-label="Tipo de documento ET">
+                <span>Tipo ET</span>
+                {ET_SCOPE_OPTIONS.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={etScope === option.key ? "active" : ""}
+                    aria-pressed={etScope === option.key}
+                    onClick={() => { setEtScope(option.key); setAnalysis(null); }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button type="button" className="primary-button" onClick={runAnalysis} disabled={!ready || Boolean(progress) || Boolean(busyRole)}>
+            {progress ? <LoaderCircle size={18} className="spin" /> : <ArrowLeftRight size={18} />}
+            {progress ? progress.label : "Comparar planilhas"}
+          </button>
         </div>
 
         {error && <div className="error-banner" role="alert"><AlertTriangle size={18} /><span>{error}</span></div>}
-
-        <div className="action-bar">
-          <div className="action-note"><LockKeyhole size={16} /><span>Seus arquivos não são enviados. Toda a leitura acontece neste navegador.</span></div>
-          <button type="button" className="primary-button" onClick={runAnalysis} disabled={!ready || Boolean(progress) || Boolean(busyRole)}>
-            {progress ? <LoaderCircle size={18} className="spin" /> : <ArrowLeftRight size={18} />}
-            {progress ? progress.label : "Comparar as três planilhas"}
-          </button>
-        </div>
         {progress && <div className="progress-track" aria-label={progress.label}><span style={{ width: `${progress.value}%` }} /></div>}
       </section>
 
@@ -970,9 +946,8 @@ export default function Home() {
         <section className="results-section" id="results">
           <div className="results-heading">
             <div>
-              <span className="section-kicker">RESULTADO DA ANÁLISE</span>
-              <h2>Conferência concluída</h2>
-              <p>{formatNumber(analysis.metrics.total)} tags consolidados · {scopeLabel(completedScope, completedEtScope)}.</p>
+              <h2>Resultados</h2>
+              <p>{formatNumber(analysis.metrics.total)} tags · {scopeLabel(completedScope, completedEtScope)}</p>
             </div>
             <button type="button" className="export-button" onClick={exportReport} disabled={exporting}>
               {exporting ? <LoaderCircle size={17} className="spin" /> : <Download size={17} />}
@@ -981,11 +956,11 @@ export default function Home() {
           </div>
 
           <div className="metrics-grid">
-            <article className="metric-card"><span>TAGS ANALISADOS</span><strong>{formatNumber(analysis.metrics.total)}</strong><small>Universo consolidado</small></article>
-            <article className="metric-card metric-good"><span>ALOCADOS</span><strong>{formatNumber(analysis.metrics.allocated)}</strong><small>Confirmados nos previstos</small></article>
-            <article className="metric-card metric-good"><span>POSTADOS</span><strong>{formatNumber(analysis.metrics.posted)}</strong><small>Localizados no SIGEM</small></article>
-            <article className="metric-card metric-bad"><span>NÃO POSTADOS</span><strong>{formatNumber(analysis.metrics.notPosted)}</strong><small>Ausentes da Consulta Geral</small></article>
-            <article className="metric-card metric-warn"><span>CÓDIGO ALTERADO</span><strong>{formatNumber(analysis.metrics.codeChanged)}</strong><small>Mesmo tag, forma diferente</small></article>
+            <article className="metric-card"><span>TAGS ANALISADOS</span><strong>{formatNumber(analysis.metrics.total)}</strong></article>
+            <article className="metric-card metric-good"><span>ALOCADOS</span><strong>{formatNumber(analysis.metrics.allocated)}</strong></article>
+            <article className="metric-card metric-good"><span>POSTADOS</span><strong>{formatNumber(analysis.metrics.posted)}</strong></article>
+            <article className="metric-card metric-bad"><span>NÃO POSTADOS</span><strong>{formatNumber(analysis.metrics.notPosted)}</strong></article>
+            <article className="metric-card metric-warn"><span>CÓDIGO ALTERADO</span><strong>{formatNumber(analysis.metrics.codeChanged)}</strong></article>
           </div>
 
           <div className="insight-strip">
@@ -1040,7 +1015,6 @@ export default function Home() {
         </section>
       )}
 
-      <footer><span><b>ReconDocs</b> · Conferência SGP × SIGEM</span><span>Comparação transparente. Decisões rastreáveis.</span></footer>
     </main>
   );
 }
