@@ -60,7 +60,7 @@ export function looksLikeDate(value) {
   return DATE_TEXT.test(text(value));
 }
 
-export function detectHeaderRow(rows, limit = 40) {
+export function detectHeaderRow(rows, limit = 200) {
   let best = { index: 0, score: -Infinity };
   const scanned = Math.min(rows.length, limit);
   for (let index = 0; index < scanned; index += 1) {
@@ -129,7 +129,8 @@ export function profileRows(rows, options = {}) {
   const headerIndex = detectHeaderRow(rows);
   const hasHeader = headerIndex >= 0;
   const dataStart = hasHeader ? headerIndex + 1 : 0;
-  const maxColumns = Math.max(1, ...rows.slice(0, 400).map((row) => (row || []).length));
+  let maxColumns = 1;
+  for (const row of rows) maxColumns = Math.max(maxColumns, (row || []).length);
   const headers = Array.from({ length: maxColumns }, (_, index) => {
     const raw = hasHeader ? text(rows[headerIndex]?.[index]) : "";
     return raw || columnLabel(index);

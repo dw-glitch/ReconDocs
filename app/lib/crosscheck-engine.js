@@ -1,9 +1,15 @@
 import { canonicalId, norm, text } from "./analysis-engine.js";
 
 export const CROSS_ROLE_LABELS = {
-  general: "Consulta Geral",
-  planned: "Documentos Previstos",
-  extra: "Planilha adicional",
+  general: "Base de referência",
+  planned: "Base de alocação",
+  extra: "Planilha comum",
+};
+
+export const CROSS_ROLE_HINTS = {
+  general: "A planilha usada como referência da comparação. Opcional.",
+  planned: "Estar nesta planilha significa Alocado = Sim; não estar, Alocado = Não. Opcional.",
+  extra: "Entra no cruzamento como qualquer outra planilha.",
 };
 
 export const MATCH_MODES = {
@@ -84,10 +90,12 @@ function presenceState(presentCount, totalSources) {
 
 function buildObservations(row, sources, general, planned) {
   const notes = [];
-  if (general && !row.existsGeneral) notes.push("Não localizado na Consulta Geral (não postado no SIGEM).");
-  if (general && row.existsGeneral && !text(row.generalStatus)) notes.push("Sem status informado na Consulta Geral.");
-  if (planned && !row.existsPlanned) notes.push("Não consta em Documentos Previstos (não alocado).");
-  if (planned && row.existsPlanned && general && !row.existsGeneral) notes.push("Alocado e ainda não postado.");
+  if (general && !row.existsGeneral) notes.push(`Não localizado em ${general.label}.`);
+  if (general && row.existsGeneral && !text(row.generalStatus)) notes.push(`Sem status informado em ${general.label}.`);
+  if (planned && !row.existsPlanned) notes.push(`Não consta em ${planned.label} (não alocado).`);
+  if (planned && row.existsPlanned && general && !row.existsGeneral) {
+    notes.push(`Consta em ${planned.label}, mas não em ${general.label}.`);
+  }
   if (row.statusDivergence) {
     notes.push(`Divergência de status: ${row.divergentStatuses.map((entry) => `${entry.label} “${entry.status}”`).join(" × ")}.`);
   }
@@ -148,7 +156,7 @@ export function crossReference(sources = [], options = {}) {
     const existsGeneral = Boolean(general && bySource[general.id].present);
     const existsPlanned = Boolean(planned && bySource[planned.id].present);
     const allocation = !planned
-      ? { kind: "unknown", label: "Sem planilha de previstos" }
+      ? { kind: "unknown", label: "—" }
       : existsPlanned
         ? { kind: "allocated", label: "Sim" }
         : { kind: "not_allocated", label: "Não" };
@@ -180,6 +188,7 @@ export function crossReference(sources = [], options = {}) {
         .join(" | "),
       onlyGeneral: Boolean(general && existsGeneral && presentIn.length === 1),
       onlyPlanned: Boolean(planned && existsPlanned && presentIn.length === 1),
+      exclusiveIn: presentIn.length === 1 ? presentIn[0] : null,
     };
 
     row.observations = buildObservations(row, list, general, planned);
@@ -196,6 +205,8 @@ export function crossReference(sources = [], options = {}) {
     })),
     generalId: general?.id || "",
     plannedId: planned?.id || "",
+    generalLabel: general?.label || "",
+    plannedLabel: planned?.label || "",
     matchMode,
     metrics: summarizeCross(rows, list),
   };
@@ -220,6 +231,7 @@ export function summarizeCross(rows, sources = []) {
     divergences: rows.filter((row) => row.statusDivergence).length,
     inAllSheets: sources.length > 1 ? rows.filter((row) => row.presence.kind === "all").length : rows.length,
     partial: rows.filter((row) => ["partial", "single"].includes(row.presence.kind)).length,
+    exclusive: rows.filter((row) => row.presence.kind === "single").length,
     missingGeneral: general ? rows.length - inGeneral.length : 0,
     perSource: Object.fromEntries(sources.map((source) => [
       source.id,
@@ -228,16 +240,25 @@ export function summarizeCross(rows, sources = []) {
   };
 }
 
-export const CROSS_FILTERS = [
-  ["all", "Todos"],
-  ["in_all", "Em todas"],
-  ["partial", "Em algumas"],
-  ["only_general", "Só Consulta Geral"],
-  ["only_planned", "Só Previstos"],
-  ["not_allocated", "Não alocados"],
-  ["missing_general", "Ausentes na Consulta Geral"],
-  ["divergent", "Divergências"],
-];
+/**
+ * Filtros disponíveis para um cruzamento. Os que dependem de uma base de
+ * referência ou de alocação só aparecem quando esses papéis foram atribuídos,
+ * e usam o nome que o usuário deu à planilha.
+ */
+export function crossFilters({ generalLabel = "", plannedLabel = "", sheets = 0 } = {}) {
+  const filters = [["all", "Todos"]];
+  if (sheets > 1) {
+    filters.push(["in_all", "Em todas"], ["partial", "Em algumas"], ["exclusive", "Exclusivos"]);
+  }
+  if (generalLabel) {
+    filters.push(["only_general", `Só ${generalLabel}`], ["missing_general", `Ausentes em ${generalLabel}`]);
+  }
+  if (plannedLabel) {
+    filters.push(["only_planned", `Só ${plannedLabel}`], ["not_allocated", "Não alocados"]);
+  }
+  filters.push(["divergent", "Divergências"]);
+  return filters;
+}
 
 export function filterCrossRows(rows, filter = "all", query = "") {
   const search = norm(query);
@@ -245,6 +266,7 @@ export function filterCrossRows(rows, filter = "all", query = "") {
     const matchesFilter = filter === "all"
       || (filter === "in_all" && row.presence.kind === "all")
       || (filter === "partial" && ["partial", "single"].includes(row.presence.kind))
+      || (filter === "exclusive" && row.presence.kind === "single")
       || (filter === "only_general" && row.onlyGeneral)
       || (filter === "only_planned" && row.onlyPlanned)
       || (filter === "not_allocated" && row.allocation.kind === "not_allocated")

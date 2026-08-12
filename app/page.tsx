@@ -789,7 +789,7 @@ export default function Home() {
         </a>
         <nav className="module-nav">
           <Link href="/" className="active" aria-current="page">Conferência SGP × SIGEM</Link>
-          <Link href="/cruzamento">Cruzamento inteligente</Link>
+          <Link href="/cruzamento">Cruzamento de planilhas</Link>
           {uploadCount > 0 && <button type="button" className="quiet-button" onClick={reset}><RotateCcw size={15} /> Limpar</button>}
         </nav>
       </header>

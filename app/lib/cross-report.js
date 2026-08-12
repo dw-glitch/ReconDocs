@@ -14,22 +14,42 @@ export function columnLetter(index) {
   return name;
 }
 
-export const CROSS_REPORT_SHEETS = [
-  "Resumo Executivo",
-  "Resultado Consolidado",
-  "Somente Consulta Geral",
-  "Somente Documentos Previstos",
-  "Divergências",
-];
 
-function safeSheetName(name) {
-  return name.replace(/[[\]:*?/\\]/g, " ").slice(0, 31).trim() || "Planilha";
+function safeSheetName(name, used) {
+  const base = name.replace(/[[\]:*?/\\]/g, " ").slice(0, 31).trim() || "Planilha";
+  if (!used || !used.has(base)) {
+    used?.add(base);
+    return base;
+  }
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${base.slice(0, 31 - String(suffix).length - 1)} ${suffix}`;
+    if (!used.has(candidate)) {
+      used.add(candidate);
+      return candidate;
+    }
+  }
 }
 
 /**
- * Monta o relatório Excel do cruzamento: Resumo Executivo, Resultado
- * Consolidado, Somente Consulta Geral, Somente Documentos Previstos,
- * Divergências e, quando houver, Planilhas Adicionais.
+ * Nomes das abas que o relatório terá para um dado cruzamento. As abas de
+ * referência e de alocação só existem quando esses papéis foram atribuídos, e
+ * levam o nome que o usuário deu à planilha.
+ */
+export function crossReportSheetNames(output) {
+  const names = ["Resumo Executivo", "Resultado Consolidado"];
+  if (output.generalLabel) names.push(`Somente ${output.generalLabel}`);
+  if (output.plannedLabel) names.push(`Somente ${output.plannedLabel}`);
+  names.push("Exclusivos por planilha", "Divergências");
+  const extras = (output.sources || []).filter((source) => source.id !== output.generalId && source.id !== output.plannedId);
+  if (extras.length) names.push("Planilhas Adicionais");
+  const used = new Set();
+  return names.map((name) => safeSheetName(name, used));
+}
+
+/**
+ * Monta o relatório Excel do cruzamento. As colunas e as abas se ajustam às
+ * planilhas carregadas: nada é fixo em uma base específica, e os títulos usam o
+ * nome que o usuário deu a cada planilha.
  *
  * @param output resultado de `crossReference`.
  * @param options `{ logoBase64 }` — a marca é gerada no navegador e injetada aqui.
@@ -49,8 +69,9 @@ export function buildCrossWorkbook(output, options = {}) {
   const planned = output.sources.find((source) => source.id === output.plannedId) || null;
   const others = output.sources.filter((source) => source.id !== output.generalId && source.id !== output.plannedId);
 
+  const usedNames = new Set();
   const addDataSheet = (name, columns, rows, highlight) => {
-    const sheet = workbook.addWorksheet(safeSheetName(name), { views: [{ state: "frozen", ySplit: 5, xSplit: 1 }] });
+    const sheet = workbook.addWorksheet(safeSheetName(name, usedNames), { views: [{ state: "frozen", ySplit: 5, xSplit: 1 }] });
     const endColumn = columnLetter(Math.max(3, columns.length - 1));
     sheet.columns = columns.map(({ key, width }) => ({ key, width }));
     addReportBranding(sheet, logoImageId, endColumn, name.toUpperCase(), subtitle);
@@ -75,7 +96,7 @@ export function buildCrossWorkbook(output, options = {}) {
 
   // Aba 1 — Resumo Executivo
   const metrics = output.metrics;
-  const summary = workbook.addWorksheet("Resumo Executivo", { views: [{ state: "frozen", ySplit: 5 }] });
+  const summary = workbook.addWorksheet(safeSheetName("Resumo Executivo", usedNames), { views: [{ state: "frozen", ySplit: 5 }] });
   summary.columns = [{ width: 46 }, { width: 18 }, { width: 62 }];
   addReportBranding(summary, logoImageId, "C", "RESUMO EXECUTIVO", subtitle);
   summary.getRow(5).values = ["Indicador", "Quantidade", "Detalhe"];
@@ -88,18 +109,30 @@ export function buildCrossWorkbook(output, options = {}) {
 
   const summaryRows = [
     ["Total de documentos analisados", metrics.total, "Documentos distintos em todas as planilhas carregadas"],
-    ["Total na Consulta Geral", metrics.totalGeneral, general ? general.label : "Planilha não carregada"],
-    ["Total em Documentos Previstos", metrics.totalPlanned, planned ? planned.label : "Planilha não carregada"],
-    ["Total de documentos em comum", metrics.inCommon, "Presentes na Consulta Geral e em Documentos Previstos"],
-    ["Somente na Consulta Geral", metrics.onlyGeneral, "Postados e não encontrados nas demais planilhas"],
-    ["Somente em Documentos Previstos", metrics.onlyPlanned, "Previstos e não encontrados nas demais planilhas"],
-    ["Total de documentos alocados", metrics.allocated, "Encontrados em Documentos Previstos"],
-    ["Total de documentos não alocados", metrics.notAllocated, "Não encontrados em Documentos Previstos"],
+    ["Planilhas cruzadas", output.sources.length, output.sources.map((source) => source.label).join(", ")],
+    ["Presentes em todas as planilhas", metrics.inAllSheets, "Encontrados em todas as bases carregadas"],
+    ["Presentes em apenas algumas planilhas", metrics.partial, "Ausentes em pelo menos uma base"],
+    ["Exclusivos de uma única planilha", metrics.exclusive, "Encontrados em uma base e em nenhuma outra"],
     ["Total de divergências de status", metrics.divergences, "Status diferente entre as planilhas"],
-    ["Presentes em todas as planilhas", metrics.inAllSheets, "Documentos encontrados em todas as bases carregadas"],
-    ["Presentes em apenas algumas planilhas", metrics.partial, "Documentos ausentes em pelo menos uma base"],
-    ["Ausentes na Consulta Geral", metrics.missingGeneral, "Pendentes de postagem no SIGEM"],
   ];
+  if (general) {
+    summaryRows.push(
+      [`Total em ${general.label}`, metrics.totalGeneral, `Documentos encontrados em ${general.label}`],
+      [`Ausentes em ${general.label}`, metrics.missingGeneral, `Não encontrados em ${general.label}`],
+      [`Somente em ${general.label}`, metrics.onlyGeneral, "Sem correspondência nas demais planilhas"],
+    );
+  }
+  if (planned) {
+    summaryRows.push(
+      [`Total em ${planned.label}`, metrics.totalPlanned, `Documentos encontrados em ${planned.label}`],
+      [`Somente em ${planned.label}`, metrics.onlyPlanned, "Sem correspondência nas demais planilhas"],
+      ["Total de documentos alocados", metrics.allocated, `Encontrados em ${planned.label}`],
+      ["Total de documentos não alocados", metrics.notAllocated, `Não encontrados em ${planned.label}`],
+    );
+  }
+  if (general && planned) {
+    summaryRows.push(["Total de documentos em comum", metrics.inCommon, `Presentes em ${general.label} e em ${planned.label}`]);
+  }
   for (const source of output.sources) {
     summaryRows.push([`Encontrados em ${source.label}`, source.total, `Planilha ${source.label}`]);
   }
@@ -115,18 +148,28 @@ export function buildCrossWorkbook(output, options = {}) {
   });
 
   // Aba 2 — Resultado Consolidado
-  const consolidatedColumns = [
-    { header: "DOCUMENTO", key: "documento", width: 52 },
-    { header: "STATUS CONSULTA GERAL", key: "statusGeral", width: 28 },
-    { header: "EXISTE CONSULTA GERAL", key: "existeGeral", width: 22 },
-    { header: "EXISTE DOCUMENTOS PREVISTOS", key: "existePrevistos", width: 26 },
-    { header: "ALOCADO", key: "alocado", width: 14 },
-    { header: "STATUS OUTRAS PLANILHAS", key: "statusOutras", width: 46 },
+  const consolidatedColumns = [{ header: "DOCUMENTO", key: "documento", width: 52 }];
+  if (general) {
+    consolidatedColumns.push(
+      { header: `STATUS ${general.label.toUpperCase()}`, key: "statusGeral", width: 28 },
+      { header: `EXISTE ${general.label.toUpperCase()}`, key: "existeGeral", width: 22 },
+    );
+  }
+  if (planned) {
+    consolidatedColumns.push(
+      { header: `EXISTE ${planned.label.toUpperCase()}`, key: "existePrevistos", width: 26 },
+      { header: "ALOCADO", key: "alocado", width: 14 },
+    );
+  }
+  consolidatedColumns.push(
+    { header: general || planned ? "STATUS OUTRAS PLANILHAS" : "STATUS POR PLANILHA", key: "statusOutras", width: 46 },
     { header: "OBSERVAÇÕES", key: "observacoes", width: 72 },
     { header: "PRESENÇA", key: "presenca", width: 24 },
-    { header: "DATA CONSULTA GERAL", key: "dataGeral", width: 18 },
-    { header: "INFORMAÇÕES COMPLEMENTARES", key: "complementos", width: 60 },
-  ];
+  );
+  if (general) consolidatedColumns.push({ header: `DATA ${general.label.toUpperCase()}`, key: "dataGeral", width: 18 });
+  consolidatedColumns.push({ header: "INFORMAÇÕES COMPLEMENTARES", key: "complementos", width: 60 });
+
+  const perSourceStart = consolidatedColumns.length + 1;
   for (const source of output.sources) {
     consolidatedColumns.push({ header: `EXISTE ${source.label.toUpperCase()}`, key: `existe_${source.id}`, width: 20 });
     consolidatedColumns.push({ header: `STATUS ${source.label.toUpperCase()}`, key: `status_${source.id}`, width: 26 });
@@ -136,10 +179,12 @@ export function buildCrossWorkbook(output, options = {}) {
     const values = {
       documento: row.document,
       statusGeral: row.generalStatus,
-      existeGeral: general ? (row.existsGeneral ? "Sim" : "Não") : "—",
-      existePrevistos: planned ? (row.existsPlanned ? "Sim" : "Não") : "—",
+      existeGeral: row.existsGeneral ? "Sim" : "Não",
+      existePrevistos: row.existsPlanned ? "Sim" : "Não",
       alocado: row.allocated,
-      statusOutras: row.otherStatuses,
+      statusOutras: general || planned
+        ? row.otherStatuses
+        : row.statusEntries.map((entry) => `${entry.label}: ${entry.status}`).join("; "),
       observacoes: row.observations,
       presenca: row.presence.label,
       dataGeral: row.generalDate,
@@ -152,20 +197,23 @@ export function buildCrossWorkbook(output, options = {}) {
     return values;
   };
 
+  const simNaoColumns = consolidatedColumns
+    .map((column, index) => ({ column, position: index + 1 }))
+    .filter(({ column, position }) => position >= perSourceStart
+      ? column.key.startsWith("existe_")
+      : ["existeGeral", "existePrevistos", "alocado"].includes(column.key))
+    .map(({ position }) => position);
+
   addDataSheet("Resultado Consolidado", consolidatedColumns, output.rows.map(consolidatedRow), (row) => {
-    const paint = (index) => {
-      const cell = row.getCell(index);
+    for (const position of simNaoColumns) {
+      const cell = row.getCell(position);
       const value = norm(cell.value);
       if (value === "SIM") cell.font = { bold: true, color: { argb: teal } };
       else if (value === "NAO") cell.font = { bold: true, color: { argb: red } };
-    };
-    paint(3);
-    paint(4);
-    paint(5);
-    for (let index = 11; index <= consolidatedColumns.length; index += 2) paint(index);
+    }
   });
 
-  // Abas 3 e 4 — exclusivos de cada base
+  // Abas exclusivas: por papel, quando atribuído, e sempre a lista geral
   const exclusiveColumns = [
     { header: "DOCUMENTO", key: "documento", width: 52 },
     { header: "STATUS", key: "status", width: 30 },
@@ -183,15 +231,27 @@ export function buildCrossWorkbook(output, options = {}) {
     observacoes: row.observations,
   });
 
+  if (general) {
+    addDataSheet(
+      `Somente ${general.label}`,
+      exclusiveColumns,
+      output.rows.filter((row) => row.onlyGeneral).map((row) => exclusiveRow(row, general.id)),
+    );
+  }
+  if (planned) {
+    addDataSheet(
+      `Somente ${planned.label}`,
+      exclusiveColumns,
+      output.rows.filter((row) => row.onlyPlanned).map((row) => exclusiveRow(row, planned.id)),
+    );
+  }
+
   addDataSheet(
-    "Somente Consulta Geral",
-    exclusiveColumns,
-    general ? output.rows.filter((row) => row.onlyGeneral).map((row) => exclusiveRow(row, general.id)) : [],
-  );
-  addDataSheet(
-    "Somente Documentos Previstos",
-    exclusiveColumns,
-    planned ? output.rows.filter((row) => row.onlyPlanned).map((row) => exclusiveRow(row, planned.id)) : [],
+    "Exclusivos por planilha",
+    [{ header: "PLANILHA", key: "planilha", width: 32 }, ...exclusiveColumns],
+    output.rows
+      .filter((row) => row.exclusiveIn)
+      .map((row) => ({ planilha: row.exclusiveIn.label, ...exclusiveRow(row, row.exclusiveIn.id) })),
   );
 
   // Aba 5 — Divergências
