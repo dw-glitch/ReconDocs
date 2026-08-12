@@ -8,8 +8,9 @@ export const REPORT_COLORS = {
 };
 
 export const DEFAULT_REPORT_SUBTITLE = "Conferência entre SGP, Consulta Geral do SIGEM e Documentos Previstos";
+export const DEFAULT_LOGO_TAGLINE = "CONFERÊNCIA SGP × SIGEM";
 
-export function createBrandLogoDataUrl() {
+export function createBrandLogoDataUrl(tagline = DEFAULT_LOGO_TAGLINE) {
   const canvas = document.createElement("canvas");
   canvas.width = 820;
   canvas.height = 170;
@@ -65,7 +66,7 @@ export function createBrandLogoDataUrl() {
   context.fillStyle = "#657B8D";
   context.font = "600 22px Arial, sans-serif";
   context.letterSpacing = "3px";
-  context.fillText("CONFERÊNCIA SGP × SIGEM", 182, 132);
+  context.fillText(tagline, 182, 132);
   return canvas.toDataURL("image/png");
 }
 

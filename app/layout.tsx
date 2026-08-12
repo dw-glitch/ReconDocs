@@ -6,8 +6,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "ReconDocs | Conferência SGP x SIGEM",
-  description: "Compare SGP, Consulta Geral do SIGEM e Documentos Previstos com rastreabilidade completa.",
+  title: "ReconDocs",
+  description: "Conferência de documentos e cruzamento de planilhas com rastreabilidade completa.",
   other: { "codex-preview": "development" },
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
 };

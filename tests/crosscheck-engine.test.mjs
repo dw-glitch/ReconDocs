@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  crossFilters,
   crossKey,
   crossReference,
   filterCrossRows,
@@ -210,4 +211,52 @@ test("o cruzamento não repete a leitura para bases grandes", () => {
   assert.equal(output.metrics.total, size);
   assert.equal(output.metrics.allocated, size / 2);
   assert.equal(output.metrics.notAllocated, size / 2);
+});
+
+test("os filtros seguem os papéis atribuídos, sem inventar Consulta Geral", () => {
+  const generico = crossFilters({ sheets: 3 }).map(([key]) => key);
+  assert.deepEqual(generico, ["all", "in_all", "partial", "exclusive", "divergent"]);
+
+  const comPapeis = crossFilters({ generalLabel: "Base A", plannedLabel: "Carteira B", sheets: 2 });
+  assert.deepEqual(comPapeis.map(([, label]) => label), [
+    "Todos",
+    "Em todas",
+    "Em algumas",
+    "Exclusivos",
+    "Só Base A",
+    "Ausentes em Base A",
+    "Só Carteira B",
+    "Não alocados",
+    "Divergências",
+  ]);
+
+  const umaPlanilha = crossFilters({ sheets: 1 }).map(([key]) => key);
+  assert.deepEqual(umaPlanilha, ["all", "divergent"]);
+});
+
+test("as observações usam o nome que o usuário deu a cada planilha", () => {
+  const output = crossReference([
+    source("a", "general", "Base Comercial", [{ document: "PED-1" }]),
+    source("b", "planned", "Carteira 2026", [{ document: "PED-2" }]),
+  ]);
+  const rows = new Map(output.rows.map((row) => [row.document, row]));
+  assert.match(rows.get("PED-2").observations, /Não localizado em Base Comercial/);
+  assert.match(rows.get("PED-1").observations, /Não consta em Carteira 2026/);
+  assert.equal(output.generalLabel, "Base Comercial");
+  assert.equal(output.plannedLabel, "Carteira 2026");
+  for (const row of output.rows) {
+    assert.doesNotMatch(row.observations, /SIGEM|SGP|Consulta Geral|Documentos Previstos/);
+  }
+});
+
+test("marca os exclusivos de uma única planilha em qualquer configuração", () => {
+  const output = crossReference([
+    source("a", "extra", "Planilha 1", [{ document: "X-1" }, { document: "X-2" }]),
+    source("b", "extra", "Planilha 2", [{ document: "X-1" }]),
+  ]);
+  const rows = new Map(output.rows.map((row) => [row.document, row]));
+  assert.equal(rows.get("X-2").exclusiveIn.label, "Planilha 1");
+  assert.equal(rows.get("X-1").exclusiveIn, null);
+  assert.equal(output.metrics.exclusive, 1);
+  assert.equal(filterCrossRows(output.rows, "exclusive", "").length, 1);
 });

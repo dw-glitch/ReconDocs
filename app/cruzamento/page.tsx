@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useDeferredValue, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import {
@@ -25,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { profileRows, recordFromRow } from "../lib/sheet-profile";
-import { CROSS_FILTERS, crossReference, filterCrossRows, MATCH_MODES } from "../lib/crosscheck-engine";
+import { CROSS_ROLE_HINTS, CROSS_ROLE_LABELS, crossFilters, crossReference, filterCrossRows, MATCH_MODES } from "../lib/crosscheck-engine";
 import { createBrandLogoDataUrl } from "../lib/report-branding";
 import { buildCrossWorkbook } from "../lib/cross-report";
 
@@ -102,6 +103,7 @@ type CrossRow = {
   complements: string;
   onlyGeneral: boolean;
   onlyPlanned: boolean;
+  exclusiveIn: CrossSourceRef | null;
   observations: string;
 };
 
@@ -119,6 +121,7 @@ type CrossMetrics = {
   inAllSheets: number;
   partial: number;
   missingGeneral: number;
+  exclusive: number;
   perSource: Record<string, number>;
 };
 
@@ -127,17 +130,24 @@ type CrossOutput = {
   sources: (CrossSourceRef & { total: number })[];
   generalId: string;
   plannedId: string;
+  generalLabel: string;
+  plannedLabel: string;
   matchMode: MatchMode;
   metrics: CrossMetrics;
 };
 
 type Progress = { value: number; label: string };
 
-const ROLE_META: Record<CrossRole, { number: string; title: string; hint: string }> = {
-  general: { number: "01", title: "Consulta Geral", hint: "Documentos já postados no SIGEM" },
-  planned: { number: "02", title: "Documentos Previstos", hint: "Documentos planejados para alocação" },
-  extra: { number: "03", title: "Planilha adicional", hint: "Qualquer outra planilha para cruzar" },
+type TableColumn = {
+  key: string;
+  header: string;
+  title?: string;
+  width: number;
+  cell: (row: CrossRow) => ReactNode;
 };
+
+const ROLE_HINTS = CROSS_ROLE_HINTS as Record<CrossRole, string>;
+const ROLE_LABELS = CROSS_ROLE_LABELS as Record<CrossRole, string>;
 
 const FIELD_LABELS: Record<CrossField, string> = {
   document: "Coluna do documento",
@@ -206,7 +216,7 @@ function downloadBlob(blob: Blob, fileName: string) {
 }
 
 async function exportCrossWorkbook(output: CrossOutput) {
-  const workbook = buildCrossWorkbook(output, { logoBase64: createBrandLogoDataUrl() });
+  const workbook = buildCrossWorkbook(output, { logoBase64: createBrandLogoDataUrl("CRUZAMENTO DE PLANILHAS") });
   const buffer = await workbook.xlsx.writeBuffer();
   downloadBlob(
     new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
@@ -243,7 +253,6 @@ function SlotCard({ slot, index, busy, removable, onUpload, onRemoveFile, onRemo
   const [dragging, setDragging] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const meta = ROLE_META[slot.role];
   const sheet = slot.file?.sheets[slot.file.selectedSheet];
 
   return (
@@ -253,7 +262,7 @@ function SlotCard({ slot, index, busy, removable, onUpload, onRemoveFile, onRemo
         <h3>{slot.label}</h3>
         {removable && <button type="button" className="icon-button slot-remove" onClick={onRemoveSlot} aria-label={`Remover ${slot.label}`}><X size={16} /></button>}
       </div>
-      <p className="slot-hint">{meta.hint}</p>
+      <p className="slot-hint">{ROLE_HINTS[slot.role]}</p>
 
       {!slot.file ? (
         <button
@@ -286,23 +295,25 @@ function SlotCard({ slot, index, busy, removable, onUpload, onRemoveFile, onRemo
                 : "Selecione a coluna do documento"}
             </span>
           </div>
+          <div className="slot-identity">
+            <label className="mapping-field">
+              <span>Nome no relatório</span>
+              <input value={slot.label} onChange={(event) => onLabel(event.target.value)} />
+            </label>
+            <label className="mapping-field">
+              <span>Papel no cruzamento</span>
+              <select value={slot.role} onChange={(event) => onRole(event.target.value as CrossRole)}>
+                {(["extra", "general", "planned"] as CrossRole[]).map((role) => (
+                  <option key={role} value={role}>{ROLE_LABELS[role]}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <button type="button" className="mapping-toggle" onClick={() => setPanelOpen((open) => !open)}>
             <Settings2 size={15} /> Mapear colunas <ChevronDown size={15} className={panelOpen ? "rotate" : ""} />
           </button>
           {panelOpen && sheet && (
             <div className="mapping-panel">
-              <label className="mapping-field">
-                <span>Papel no cruzamento</span>
-                <select value={slot.role} onChange={(event) => onRole(event.target.value as CrossRole)}>
-                  <option value="general">Consulta Geral</option>
-                  <option value="planned">Documentos Previstos</option>
-                  <option value="extra">Planilha adicional</option>
-                </select>
-              </label>
-              <label className="mapping-field">
-                <span>Nome no relatório</span>
-                <input value={slot.label} onChange={(event) => onLabel(event.target.value)} />
-              </label>
               {slot.file.sheets.length > 1 && (
                 <label className="mapping-field">
                   <span>Aba analisada</span>
@@ -379,8 +390,8 @@ function DetailPanel({ row, sources }: { row: CrossRow; sources: (CrossSourceRef
 
 export default function CrossCheckPage() {
   const [slots, setSlots] = useState<CrossSlot[]>([
-    { id: "general", role: "general", label: "Consulta Geral" },
-    { id: "planned", role: "planned", label: "Documentos Previstos" },
+    { id: "sheet-1", role: "extra", label: "Planilha 1" },
+    { id: "sheet-2", role: "extra", label: "Planilha 2" },
   ]);
   const [busySlot, setBusySlot] = useState<string | null>(null);
   const [matchMode, setMatchMode] = useState<MatchMode>("smart");
@@ -445,7 +456,7 @@ export default function CrossCheckPage() {
   const addSlot = () => {
     setSlots((current) => {
       const nextIndex = current.length + 1;
-      return [...current, { id: `extra-${Date.now()}`, role: "extra", label: `Planilha ${nextIndex}` }];
+      return [...current, { id: `sheet-${Date.now()}`, role: "extra", label: `Planilha ${nextIndex}` }];
     });
     invalidate();
   };
@@ -501,8 +512,8 @@ export default function CrossCheckPage() {
 
   const reset = () => {
     setSlots([
-      { id: "general", role: "general", label: "Consulta Geral" },
-      { id: "planned", role: "planned", label: "Documentos Previstos" },
+      { id: "sheet-1", role: "extra", label: "Planilha 1" },
+      { id: "sheet-2", role: "extra", label: "Planilha 2" },
     ]);
     setOutput(null);
     setError("");
@@ -514,6 +525,83 @@ export default function CrossCheckPage() {
 
   const filterCount = (filter: string) => output ? filterCrossRows(output.rows, filter, "").length : 0;
   const metrics = output?.metrics;
+  const generalLabel = output?.generalLabel || "";
+  const plannedLabel = output?.plannedLabel || "";
+  const filters = useMemo(
+    () => crossFilters({ generalLabel, plannedLabel, sheets: output?.sources.length || 0 }) as [string, string][],
+    [generalLabel, plannedLabel, output],
+  );
+
+  // As colunas da tabela seguem as planilhas carregadas: as de referência e de
+  // alocação só existem quando esses papéis foram atribuídos.
+  const tableColumns = useMemo<TableColumn[]>(() => {
+    const columns: TableColumn[] = [
+      {
+        key: "document",
+        header: "Documento",
+        width: generalLabel || plannedLabel ? 30 : 36,
+        cell: (row) => (
+          <>
+            <strong className="document-code">{row.document}</strong>
+            <small>{row.presentIn.map((source) => source.label).join(" · ") || "Sem fonte"}</small>
+          </>
+        ),
+      },
+      {
+        key: "presence",
+        header: "Presença",
+        width: 16,
+        cell: (row) => (
+          <span className={`status-badge status-${row.presence.kind === "all" ? "both" : row.presence.kind === "none" ? "not_found" : "unknown"}`}>
+            {row.presence.label}
+          </span>
+        ),
+      },
+    ];
+
+    if (generalLabel) {
+      columns.push({
+        key: "general",
+        header: generalLabel,
+        title: `Existe em ${generalLabel}`,
+        width: 15,
+        cell: (row) => (
+          <>
+            <span className={`status-badge status-${row.existsGeneral ? "allocated" : "not_allocated"}`}>{row.existsGeneral ? "Sim" : "Não"}</span>
+            {row.generalStatus && <small className="cell-note">{row.generalStatus}</small>}
+          </>
+        ),
+      });
+    }
+
+    if (plannedLabel) {
+      columns.push({
+        key: "allocated",
+        header: "Alocado",
+        title: `Presente em ${plannedLabel}`,
+        width: 12,
+        cell: (row) => <span className={`status-badge status-${row.allocation.kind}`}>{row.allocated}</span>,
+      });
+    }
+
+    columns.push({
+      key: "status",
+      header: "Status por planilha",
+      width: generalLabel || plannedLabel ? 22 : 43,
+      cell: (row) => row.statusDivergence
+        ? <span className="difference-text status-divergence">{row.divergentStatuses.map((entry) => `${entry.label}: ${entry.status}`).join(" × ")}</span>
+        : <span className="nt-result">{row.statusEntries.map((entry) => `${entry.label}: ${entry.status}`)[0] || "Sem status informado"}</span>,
+    });
+
+    columns.push({
+      key: "chevron",
+      header: "",
+      width: 5,
+      cell: (row) => <ChevronDown size={17} className={expanded === row.key ? "rotate" : ""} />,
+    });
+
+    return columns;
+  }, [generalLabel, plannedLabel, expanded]);
 
   return (
     <main>
@@ -527,7 +615,7 @@ export default function CrossCheckPage() {
         </Link>
         <nav className="module-nav">
           <Link href="/">Conferência SGP × SIGEM</Link>
-          <Link href="/cruzamento" className="active" aria-current="page">Cruzamento inteligente</Link>
+          <Link href="/cruzamento" className="active" aria-current="page">Cruzamento de planilhas</Link>
           {slots.some((slot) => slot.file) && <button type="button" className="quiet-button" onClick={reset}><RotateCcw size={15} /> Limpar</button>}
         </nav>
       </header>
@@ -535,8 +623,12 @@ export default function CrossCheckPage() {
       <section className="workspace-section" id="top" aria-labelledby="cross-title">
         <div className="section-heading">
           <div>
-            <h1 id="cross-title">Cruzamento inteligente de planilhas</h1>
-            <p className="section-subtitle">Carregue a Consulta Geral, os Documentos Previstos e quantas planilhas forem necessárias. O módulo se adapta ao layout de cada arquivo.</p>
+            <h1 id="cross-title">Cruzamento de planilhas</h1>
+            <p className="section-subtitle">
+              Carregue quantas planilhas quiser, de qualquer origem e layout, e cruze todas de uma vez. O módulo detecta as colunas
+              sozinho e você ajusta o que quiser. Opcionalmente, marque uma planilha como base de referência e outra como base de
+              alocação para ativar as colunas de <b>Existe</b> e <b>Alocado</b>.
+            </p>
           </div>
           <span className="upload-count">{loadedSlots.length} de {slots.length} prontas</span>
         </div>
@@ -548,7 +640,7 @@ export default function CrossCheckPage() {
               slot={slot}
               index={index}
               busy={busySlot === slot.id}
-              removable={slots.length > 2 && slot.role === "extra"}
+              removable={slots.length > 1}
               onUpload={(file) => handleFile(slot.id, file)}
               onRemoveFile={() => updateSlot(slot.id, (item) => ({ ...item, file: undefined }))}
               onRemoveSlot={() => { setSlots((current) => current.filter((item) => item.id !== slot.id)); invalidate(); }}
@@ -562,7 +654,7 @@ export default function CrossCheckPage() {
           <button type="button" className="add-slot" onClick={addSlot}>
             <Plus size={20} />
             <b>Adicionar planilha</b>
-            <span>Quantas forem necessárias</span>
+            <span>Sem limite de quantidade</span>
           </button>
         </div>
 
@@ -590,7 +682,7 @@ export default function CrossCheckPage() {
           </button>
         </div>
 
-        {!ready && <p className="control-hint control-hint-block">Carregue pelo menos duas planilhas com a coluna do documento mapeada para iniciar o cruzamento.</p>}
+        {!ready && <p className="control-hint control-hint-block">Carregue pelo menos duas planilhas com a coluna do documento mapeada para iniciar o cruzamento. Não há limite de planilhas.</p>}
         {error && <div className="error-banner" role="alert"><AlertTriangle size={18} /><span>{error}</span></div>}
         {progress && <div className="progress-track" aria-label={progress.label}><span style={{ width: `${progress.value}%` }} /></div>}
       </section>
@@ -610,26 +702,41 @@ export default function CrossCheckPage() {
 
           <div className="metrics-grid cross-metrics">
             <article className="metric-card"><span>DOCUMENTOS ANALISADOS</span><strong>{formatNumber(metrics.total)}</strong></article>
-            <article className="metric-card"><span>CONSULTA GERAL</span><strong>{formatNumber(metrics.totalGeneral)}</strong></article>
-            <article className="metric-card"><span>DOCUMENTOS PREVISTOS</span><strong>{formatNumber(metrics.totalPlanned)}</strong></article>
-            <article className="metric-card metric-good"><span>EM COMUM</span><strong>{formatNumber(metrics.inCommon)}</strong></article>
-            <article className="metric-card metric-warn"><span>SÓ CONSULTA GERAL</span><strong>{formatNumber(metrics.onlyGeneral)}</strong></article>
-            <article className="metric-card metric-warn"><span>SÓ PREVISTOS</span><strong>{formatNumber(metrics.onlyPlanned)}</strong></article>
-            <article className="metric-card metric-good"><span>ALOCADOS</span><strong>{formatNumber(metrics.allocated)}</strong></article>
-            <article className="metric-card metric-bad"><span>NÃO ALOCADOS</span><strong>{formatNumber(metrics.notAllocated)}</strong></article>
+            <article className="metric-card metric-good"><span>EM TODAS AS PLANILHAS</span><strong>{formatNumber(metrics.inAllSheets)}</strong></article>
+            <article className="metric-card metric-warn"><span>EM APENAS ALGUMAS</span><strong>{formatNumber(metrics.partial)}</strong></article>
+            <article className="metric-card metric-warn"><span>EXCLUSIVOS DE UMA</span><strong>{formatNumber(metrics.exclusive)}</strong></article>
+            {output.sources.map((source) => (
+              <article key={source.id} className="metric-card">
+                <span title={source.label}>{source.label.toUpperCase()}</span>
+                <strong>{formatNumber(source.total)}</strong>
+              </article>
+            ))}
+            {generalLabel && (
+              <article className="metric-card metric-bad">
+                <span title={`Ausentes em ${generalLabel}`}>AUSENTES EM {generalLabel.toUpperCase()}</span>
+                <strong>{formatNumber(metrics.missingGeneral)}</strong>
+              </article>
+            )}
+            {plannedLabel && <article className="metric-card metric-good"><span>ALOCADOS</span><strong>{formatNumber(metrics.allocated)}</strong></article>}
+            {plannedLabel && <article className="metric-card metric-bad"><span>NÃO ALOCADOS</span><strong>{formatNumber(metrics.notAllocated)}</strong></article>}
+            {generalLabel && plannedLabel && <article className="metric-card metric-good"><span>EM COMUM</span><strong>{formatNumber(metrics.inCommon)}</strong></article>}
           </div>
 
           <div className="insight-strip">
             <div><b>{formatNumber(metrics.divergences)}</b><span>divergências de status</span></div>
-            <div><b>{formatNumber(metrics.inAllSheets)}</b><span>em todas as planilhas</span></div>
-            <div><b>{formatNumber(metrics.partial)}</b><span>em apenas algumas</span></div>
-            <div><b>{formatNumber(metrics.missingGeneral)}</b><span>ausentes na Consulta Geral</span></div>
+            <div><b>{formatNumber(metrics.sheets)}</b><span>planilhas cruzadas</span></div>
+            {generalLabel
+              ? <div><b>{formatNumber(metrics.onlyGeneral)}</b><span>só em {generalLabel}</span></div>
+              : <div><b>{formatNumber(metrics.exclusive)}</b><span>exclusivos de uma planilha</span></div>}
+            {plannedLabel
+              ? <div><b>{formatNumber(metrics.onlyPlanned)}</b><span>só em {plannedLabel}</span></div>
+              : <div><b>{formatNumber(metrics.partial)}</b><span>ausentes em alguma planilha</span></div>}
           </div>
 
           <div className="results-card">
             <div className="table-toolbar">
               <div className="filter-tabs" role="tablist" aria-label="Filtros do cruzamento">
-                {CROSS_FILTERS.map(([key, label]: string[]) => (
+                {filters.map(([key, label]: string[]) => (
                   <button key={key} type="button" role="tab" aria-selected={activeFilter === key} className={activeFilter === key ? "active" : ""} onClick={() => { setActiveFilter(key); setPage(1); setExpanded(null); }}>
                     {label}<span>{formatNumber(filterCount(key))}</span>
                   </button>
@@ -648,15 +755,15 @@ export default function CrossCheckPage() {
             </div>
 
             <div className="table-scroll">
-              <table>
+              <table className="cross-table">
+                <colgroup>
+                  {tableColumns.map((column) => <col key={column.key} style={{ width: `${column.width}%` }} />)}
+                </colgroup>
                 <thead>
                   <tr>
-                    <th>Documento</th>
-                    <th>Presença</th>
-                    <th>Consulta Geral</th>
-                    <th>Alocado</th>
-                    <th>Status por planilha</th>
-                    <th aria-label="Detalhes" />
+                    {tableColumns.map((column) => (
+                      <th key={column.key} title={column.title || undefined}>{column.header}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -668,33 +775,18 @@ export default function CrossCheckPage() {
                         tabIndex={0}
                         onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setExpanded(expanded === row.key ? null : row.key); }}
                       >
-                        <td>
-                          <strong className="document-code">{row.document}</strong>
-                          <small>{row.presentIn.map((source) => source.label).join(" · ") || "Sem fonte"}</small>
-                        </td>
-                        <td><span className={`status-badge status-${row.presence.kind === "all" ? "both" : row.presence.kind === "none" ? "not_found" : "unknown"}`}>{row.presence.label}</span></td>
-                        <td>
-                          <span className={`status-badge status-${row.existsGeneral ? "allocated" : "not_allocated"}`}>{row.existsGeneral ? "Sim" : "Não"}</span>
-                          {row.generalStatus && <small className="cell-note">{row.generalStatus}</small>}
-                        </td>
-                        <td><span className={`status-badge status-${row.allocation.kind}`}>{row.allocated}</span></td>
-                        <td>
-                          {row.statusDivergence
-                            ? <span className="difference-text status-divergence">{row.divergentStatuses.map((entry) => `${entry.label}: ${entry.status}`).join(" × ")}</span>
-                            : <span className="nt-result">{row.statusEntries.map((entry) => entry.status)[0] || "Sem status informado"}</span>}
-                        </td>
-                        <td><ChevronDown size={17} className={expanded === row.key ? "rotate" : ""} /></td>
+                        {tableColumns.map((column) => <td key={column.key}>{column.cell(row)}</td>)}
                       </tr>
                       {expanded === row.key && (
                         <tr className="details-row">
-                          <td colSpan={6}><DetailPanel row={row} sources={output.sources} /></td>
+                          <td colSpan={tableColumns.length}><DetailPanel row={row} sources={output.sources} /></td>
                         </tr>
                       )}
                     </Fragment>
                   ))}
                   {!visibleRows.length && (
                     <tr>
-                      <td colSpan={6}>
+                      <td colSpan={tableColumns.length}>
                         <div className="empty-state">
                           <CircleHelp size={28} />
                           <b>Nenhum documento neste filtro</b>
