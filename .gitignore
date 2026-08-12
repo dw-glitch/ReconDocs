@@ -1,0 +1,21 @@
+# Dependências
+node_modules/
+
+# Saídas de build
+.next/
+dist/
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Runtime local das ferramentas
+.sites-runtime/
+.wrangler/
+.vercel/
+
+# Ambiente
+.env
+.env.*
+!.env.example
+
+# Sistema operacional
+.DS_Store
