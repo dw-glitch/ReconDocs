@@ -60,6 +60,25 @@ export function looksLikeDate(value) {
   return DATE_TEXT.test(text(value));
 }
 
+/**
+ * Converte o valor de uma célula de data em `Date`, para que o relatório
+ * exporte data de verdade — ordenável e filtrável no Excel — em vez de texto.
+ * Texto no formato dd/mm/aaaa também é reconhecido. Devolve `null` quando o
+ * valor não é uma data.
+ */
+export function parseDateValue(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const raw = text(value);
+  const match = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:\s+(\d{1,2}):(\d{2}))?$/);
+  if (!match) return null;
+  const [, day, month, year, hour = "0", minute = "0"] = match;
+  const fullYear = year.length === 2 ? 2000 + Number(year) : Number(year);
+  const parsed = new Date(fullYear, Number(month) - 1, Number(day), Number(hour), Number(minute));
+  if (Number.isNaN(parsed.getTime())) return null;
+  if (parsed.getDate() !== Number(day) || parsed.getMonth() !== Number(month) - 1) return null;
+  return parsed;
+}
+
 export function detectHeaderRow(rows, limit = 200) {
   let best = { index: 0, score: -Infinity };
   const scanned = Math.min(rows.length, limit);
@@ -160,10 +179,12 @@ export function recordFromRow(profile, row = [], index = 0) {
     const value = text(row[column]);
     if (value) extras[headers[column] || `Coluna ${column + 1}`] = value;
   }
+  const rawDate = mapping.date >= 0 ? row[mapping.date] : "";
   return {
     document,
     status: mapping.status >= 0 ? text(row[mapping.status]) : "",
-    date: mapping.date >= 0 ? text(row[mapping.date]) : "",
+    date: text(rawDate),
+    dateValue: parseDateValue(rawDate),
     extras,
     rowNumber: startRow + index + 1,
   };

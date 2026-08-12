@@ -55,9 +55,9 @@ test("o relatório traz as abas exigidas, na ordem, nomeadas pelas planilhas do 
     "Resultado Consolidado",
     "Somente Consulta Geral",
     "Somente Documentos Previstos",
-    "Exclusivos por planilha",
     "Divergências",
     "Planilhas Adicionais",
+    "Como ler este relatório",
   ]);
   assert.deepEqual(crossReportSheetNames(output), names);
 });
@@ -89,8 +89,9 @@ test("Aba 2 — Resultado Consolidado usa as colunas pedidas e uma coluna por pl
   const sheet = workbook.getWorksheet("Resultado Consolidado");
   const headers = values(sheet, 5);
 
-  assert.deepEqual(headers.slice(0, 7), [
+  assert.deepEqual(headers.slice(0, 8), [
     "DOCUMENTO",
+    "SITUAÇÃO",
     "STATUS CONSULTA GERAL",
     "EXISTE CONSULTA GERAL",
     "EXISTE DOCUMENTOS PREVISTOS",
@@ -104,19 +105,60 @@ test("Aba 2 — Resultado Consolidado usa as colunas pedidas e uma coluna por pl
 
   const first = values(sheet, 6);
   assert.equal(first[0], "DOC-001");
-  assert.equal(first[1], "Aprovado");
-  assert.equal(first[2], "Sim");
+  assert.equal(first[1], "Divergência de status");
+  assert.equal(first[2], "Aprovado");
   assert.equal(first[3], "Sim");
   assert.equal(first[4], "Sim");
-  assert.equal(first[5], "Checklist de Campo: Reprovado");
-  assert.match(first[6], /Divergência de status/);
-  assert.equal(first[8], "10/02/2026");
+  assert.equal(first[5], "Sim");
+  assert.equal(first[6], "Checklist de Campo: Reprovado");
+  assert.match(first[7], /Divergência de status/);
 
   const missing = values(sheet, 9); // DOC-900, só nos previstos
   assert.equal(missing[0], "DOC-900");
-  assert.equal(missing[2], "Não");
-  assert.equal(missing[4], "Sim");
-  assert.match(missing[6], /Não localizado em Consulta Geral/);
+  assert.equal(missing[1], "Ausente em Consulta Geral");
+  assert.equal(missing[3], "Não");
+  assert.equal(missing[5], "Sim");
+  assert.match(missing[7], /Não localizado em Consulta Geral/);
+});
+
+test("nenhuma coluna do Resultado Consolidado se repete", () => {
+  const workbook = buildCrossWorkbook(sampleOutput(), { logoBase64: LOGO });
+  const headers = values(workbook.getWorksheet("Resultado Consolidado"), 5);
+  assert.deepEqual([...new Set(headers)].length, headers.length, `cabeçalhos repetidos em ${headers.join(" | ")}`);
+  // A planilha de referência tem coluna dedicada e não volta no bloco por planilha.
+  assert.equal(headers.filter((header) => header === "STATUS CONSULTA GERAL").length, 1);
+  assert.equal(headers.filter((header) => header === "EXISTE CONSULTA GERAL").length, 1);
+});
+
+test("a data é exportada como data de verdade, não como texto", () => {
+  const workbook = buildCrossWorkbook(sampleOutput(), { logoBase64: LOGO });
+  const sheet = workbook.getWorksheet("Resultado Consolidado");
+  const column = values(sheet, 5).indexOf("DATA CONSULTA GERAL") + 1;
+  const cell = sheet.getRow(6).getCell(column);
+  assert.ok(cell.value instanceof Date, "a célula de data deveria conter um Date");
+  assert.equal(cell.numFmt, "dd/mm/yyyy");
+  assert.equal(cell.value.getFullYear(), 2026);
+  assert.equal(cell.value.getMonth(), 1);
+  assert.equal(cell.value.getDate(), 10);
+});
+
+test("a aba de legenda explica planilhas, abas, situações e colunas", () => {
+  const workbook = buildCrossWorkbook(sampleOutput(), { logoBase64: LOGO });
+  const legend = workbook.getWorksheet("Como ler este relatório");
+  const items = [];
+  legend.eachRow((row, rowNumber) => {
+    if (rowNumber > 5) items.push(String(row.getCell(1).value || ""));
+  });
+
+  assert.ok(items.includes("AS PLANILHAS CRUZADAS"));
+  assert.ok(items.includes("AS ABAS"));
+  assert.ok(items.includes("A COLUNA SITUAÇÃO"));
+  assert.ok(items.includes("AS DEMAIS COLUNAS"));
+  assert.ok(items.includes("Consulta Geral"));
+  assert.ok(items.includes("Divergência de status"));
+  assert.ok(items.includes("Ausente em Consulta Geral"));
+  assert.ok(items.includes("ALOCADO"));
+  assert.ok(items.includes("Resultado Consolidado"));
 });
 
 test("Abas 3 e 4 — listas exclusivas de cada base", () => {
@@ -124,9 +166,9 @@ test("Abas 3 e 4 — listas exclusivas de cada base", () => {
   const onlyGeneral = workbook.getWorksheet("Somente Consulta Geral");
   const onlyPlanned = workbook.getWorksheet("Somente Documentos Previstos");
 
-  assert.deepEqual(values(onlyGeneral, 5).slice(0, 4), ["DOCUMENTO", "STATUS", "DATA", "LINHA DE ORIGEM"]);
+  assert.deepEqual(values(onlyGeneral, 5).slice(0, 5), ["DOCUMENTO", "SITUAÇÃO", "STATUS", "DATA", "LINHA DE ORIGEM"]);
   assert.equal(onlyGeneral.rowCount, 6);
-  assert.deepEqual(values(onlyGeneral, 6).slice(0, 4), ["DOC-003", "Aprovado", "", "8"]);
+  assert.deepEqual(values(onlyGeneral, 6).slice(0, 5), ["DOC-003", "Não alocado", "Aprovado", "", "8"]);
 
   assert.equal(onlyPlanned.rowCount, 6);
   assert.equal(values(onlyPlanned, 6)[0], "DOC-900");
@@ -136,10 +178,10 @@ test("Aba 5 — Divergências traz uma coluna de status por planilha", () => {
   const workbook = buildCrossWorkbook(sampleOutput(), { logoBase64: LOGO });
   const sheet = workbook.getWorksheet("Divergências");
 
+  // Documentos Previstos não tem status mapeado: a coluna vazia não é criada.
   assert.deepEqual(values(sheet, 5), [
     "DOCUMENTO",
     "STATUS CONSULTA GERAL",
-    "STATUS DOCUMENTOS PREVISTOS",
     "STATUS CHECKLIST DE CAMPO",
     "DIVERGÊNCIA",
   ]);
@@ -147,7 +189,6 @@ test("Aba 5 — Divergências traz uma coluna de status por planilha", () => {
   assert.deepEqual(values(sheet, 6), [
     "DOC-001",
     "Aprovado",
-    "",
     "Reprovado",
     "Consulta Geral: Aprovado × Checklist de Campo: Reprovado",
   ]);
@@ -171,8 +212,8 @@ test("sem planilhas adicionais o relatório dispensa a aba extra", () => {
     "Resultado Consolidado",
     "Somente Consulta Geral",
     "Somente Documentos Previstos",
-    "Exclusivos por planilha",
     "Divergências",
+    "Como ler este relatório",
   ]);
 });
 
@@ -189,8 +230,9 @@ test("os títulos seguem o nome dado às planilhas, não um processo específico
     "Somente Carteira 2026",
   ]);
   const headers = values(workbook.getWorksheet("Resultado Consolidado"), 5);
-  assert.deepEqual(headers.slice(0, 5), [
+  assert.deepEqual(headers.slice(0, 6), [
     "DOCUMENTO",
+    "SITUAÇÃO",
     "STATUS BASE COMERCIAL",
     "EXISTE BASE COMERCIAL",
     "EXISTE CARTEIRA 2026",
@@ -221,17 +263,18 @@ test("sem papéis atribuídos o relatório é puramente genérico", () => {
     "Exclusivos por planilha",
     "Divergências",
     "Planilhas Adicionais",
+    "Como ler este relatório",
   ]);
 
   const headers = values(workbook.getWorksheet("Resultado Consolidado"), 5);
-  assert.deepEqual(headers.slice(0, 4), ["DOCUMENTO", "STATUS POR PLANILHA", "OBSERVAÇÕES", "PRESENÇA"]);
+  assert.deepEqual(headers.slice(0, 5), ["DOCUMENTO", "SITUAÇÃO", "STATUS POR PLANILHA", "OBSERVAÇÕES", "PRESENÇA"]);
   assert.ok(!headers.includes("ALOCADO"));
   assert.ok(!headers.some((header) => header.startsWith("EXISTE CONSULTA")));
 
   const exclusives = workbook.getWorksheet("Exclusivos por planilha");
   assert.equal(exclusives.rowCount, 7); // 5 de cabeçalho + X-2 e X-3
-  assert.deepEqual(values(exclusives, 6).slice(0, 2), ["Planilha 1", "X-2"]);
-  assert.deepEqual(values(exclusives, 7).slice(0, 2), ["Planilha 3", "X-3"]);
+  assert.deepEqual(values(exclusives, 6).slice(0, 3), ["Planilha 1", "X-2", "Só em Planilha 1"]);
+  assert.deepEqual(values(exclusives, 7).slice(0, 3), ["Planilha 3", "X-3", "Só em Planilha 3"]);
 
   assert.equal(output.metrics.exclusive, 2);
   assert.equal(output.metrics.allocated, 0);

@@ -57,6 +57,7 @@ function summarizeSource(records) {
     status: statuses.join(" | "),
     dates,
     date: dates[0] || "",
+    dateValue: records.map((record) => record.dateValue).find((value) => value instanceof Date) || null,
     extras,
     extrasText: extras.map((extra) => `${extra.label}: ${extra.value}`).join("; "),
     rows: records.map((record) => record.rowNumber).filter((row) => Number.isFinite(row)),
@@ -74,6 +75,7 @@ const ABSENT_SOURCE = {
   status: "",
   dates: [],
   date: "",
+  dateValue: null,
   extras: [],
   extrasText: "",
   rows: [],
@@ -86,6 +88,21 @@ function presenceState(presentCount, totalSources) {
   if (totalSources > 1 && presentCount === totalSources) return { kind: "all", label: "Em todas as planilhas" };
   if (presentCount === 1) return { kind: "single", label: "Em apenas uma planilha" };
   return { kind: "partial", label: `Em ${presentCount} de ${totalSources} planilhas` };
+}
+
+/**
+ * Situação da linha: um rótulo único, do mais grave para o mais brando, para
+ * que dê para filtrar por ele tanto na tela quanto no Excel. As observações
+ * continuam trazendo o detalhe completo.
+ */
+function resolveSituation(row, sources, general, planned) {
+  if (row.statusDivergence) return { kind: "divergent", label: "Divergência de status" };
+  if (general && !row.existsGeneral) return { kind: "missing_reference", label: `Ausente em ${general.label}` };
+  if (planned && !row.existsPlanned) return { kind: "not_allocated", label: "Não alocado" };
+  if (sources.length > 1 && row.exclusiveIn) return { kind: "exclusive", label: `Só em ${row.exclusiveIn.label}` };
+  if (row.missingIn.length === 1) return { kind: "partial", label: `Ausente em ${row.missingIn[0].label}` };
+  if (row.missingIn.length) return { kind: "partial", label: `Ausente em ${row.missingIn.length} planilhas` };
+  return { kind: "ok", label: "Sem pendências" };
 }
 
 function buildObservations(row, sources, general, planned) {
@@ -191,6 +208,7 @@ export function crossReference(sources = [], options = {}) {
       exclusiveIn: presentIn.length === 1 ? presentIn[0] : null,
     };
 
+    row.situation = resolveSituation(row, list, general, planned);
     row.observations = buildObservations(row, list, general, planned);
     return row;
   }).sort((left, right) => left.document.localeCompare(right.document, "pt-BR", { numeric: true }));
@@ -233,6 +251,11 @@ export function summarizeCross(rows, sources = []) {
     partial: rows.filter((row) => ["partial", "single"].includes(row.presence.kind)).length,
     exclusive: rows.filter((row) => row.presence.kind === "single").length,
     missingGeneral: general ? rows.length - inGeneral.length : 0,
+    bySituation: rows.reduce((counts, row) => {
+      const label = row.situation?.label || "Sem pendências";
+      counts[label] = (counts[label] || 0) + 1;
+      return counts;
+    }, {}),
     perSource: Object.fromEntries(sources.map((source) => [
       source.id,
       rows.filter((row) => row.sources[source.id]?.present).length,
@@ -280,6 +303,7 @@ export function filterCrossRows(rows, filter = "all", query = "") {
       row.generalStatus,
       row.otherStatuses,
       row.presence.label,
+      row.situation.label,
       row.allocated,
       row.observations,
       row.complements,
