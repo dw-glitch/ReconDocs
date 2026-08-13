@@ -25,7 +25,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { profileRows, recordFromRow } from "../lib/sheet-profile";
+import { countMappedRecords, labelFromFileName, profileRows, recordFromRow, sampleColumnValues, uniqueLabelAmong } from "../lib/sheet-profile";
 import { CROSS_ROLE_HINTS, CROSS_ROLE_LABELS, crossFilters, crossReference, filterCrossRows, MATCH_MODES } from "../lib/crosscheck-engine";
 import { createBrandLogoDataUrl } from "../lib/report-branding";
 import { buildCrossWorkbook } from "../lib/cross-report";
@@ -54,7 +54,7 @@ type CrossFile = {
   selectedSheet: number;
 };
 
-type CrossSlot = { id: string; role: CrossRole; label: string; file?: CrossFile };
+type CrossSlot = { id: string; role: CrossRole; label: string; fallbackLabel: string; renamed?: boolean; file?: CrossFile };
 
 type CrossRecord = {
   document: string;
@@ -227,13 +227,19 @@ async function exportCrossWorkbook(output: CrossOutput) {
 }
 
 function MappingSelect({ sheet, field, onChange }: { sheet: CrossSheetProfile; field: CrossField; onChange: (index: number) => void }) {
+  const column = sheet.mapping[field];
+  const samples = useMemo(
+    () => column >= 0 ? sampleColumnValues(sheet.rows, column, sheet.dataStart) : [],
+    [sheet.rows, sheet.dataStart, column],
+  );
   return (
     <label className="mapping-field">
       <span>{FIELD_LABELS[field]}{field === "document" ? " *" : ""}</span>
-      <select value={sheet.mapping[field]} onChange={(event) => onChange(Number(event.target.value))}>
+      <select value={column} onChange={(event) => onChange(Number(event.target.value))}>
         <option value={-1}>Não usar</option>
         {sheet.headers.map((header, index) => <option key={`${header}-${index}`} value={index}>{header}</option>)}
       </select>
+      {samples.length > 0 && <small className="mapping-sample">Exemplos: {samples.join(" · ")}</small>}
     </label>
   );
 }
@@ -256,12 +262,18 @@ function SlotCard({ slot, index, busy, removable, onUpload, onRemoveFile, onRemo
   const [panelOpen, setPanelOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const sheet = slot.file?.sheets[slot.file.selectedSheet];
+  const documentCount = useMemo(() => sheet ? countMappedRecords(sheet) : 0, [sheet]);
+  const detectedState = !sheet || sheet.mapping.document < 0
+    ? "unmapped"
+    : documentCount === 0
+      ? "empty"
+      : "ok";
 
   return (
     <article className={`upload-card ${slot.file ? "has-file" : ""}`}>
       <div className="upload-card-heading">
         <span className="step-number">{String(index + 1).padStart(2, "0")}</span>
-        <h3>{slot.label}</h3>
+        <h3 className="slot-title" title={slot.label}>{slot.label}</h3>
         {removable && <button type="button" className="icon-button slot-remove" onClick={onRemoveSlot} aria-label={`Remover ${slot.label}`}><X size={16} /></button>}
       </div>
       <p className="slot-hint">{ROLE_HINTS[slot.role]}</p>
@@ -289,12 +301,12 @@ function SlotCard({ slot, index, busy, removable, onUpload, onRemoveFile, onRemo
             </div>
             <button type="button" className="icon-button" onClick={onRemoveFile} aria-label={`Remover arquivo de ${slot.label}`}><X size={17} /></button>
           </div>
-          <div className={`detected-line ${sheet && sheet.mapping.document >= 0 ? "" : "detected-warning"}`}>
-            {sheet && sheet.mapping.document >= 0 ? <CircleCheck size={16} /> : <AlertTriangle size={16} />}
+          <div className={`detected-line ${detectedState === "ok" ? "" : "detected-warning"}`}>
+            {detectedState === "ok" ? <CircleCheck size={16} /> : <AlertTriangle size={16} />}
             <span>
-              {sheet && sheet.mapping.document >= 0
-                ? `Documento: ${sheet.headers[sheet.mapping.document]}${sheet.mapping.status >= 0 ? ` · Status: ${sheet.headers[sheet.mapping.status]}` : ""}`
-                : "Selecione a coluna do documento"}
+              {detectedState === "unmapped" && "Selecione a coluna do documento"}
+              {detectedState === "empty" && `A coluna “${sheet!.headers[sheet!.mapping.document]}” não trouxe nenhum documento. Verifique o mapeamento.`}
+              {detectedState === "ok" && `Documento: ${sheet!.headers[sheet!.mapping.document]}${sheet!.mapping.status >= 0 ? ` · Status: ${sheet!.headers[sheet!.mapping.status]}` : ""} · ${formatNumber(documentCount)} encontrado(s)`}
             </span>
           </div>
           <div className="slot-identity">
@@ -393,8 +405,8 @@ function DetailPanel({ row, sources }: { row: CrossRow; sources: (CrossSourceRef
 
 export default function CrossCheckPage() {
   const [slots, setSlots] = useState<CrossSlot[]>([
-    { id: "sheet-1", role: "extra", label: "Planilha 1" },
-    { id: "sheet-2", role: "extra", label: "Planilha 2" },
+    { id: "sheet-1", role: "extra", label: "Planilha 1", fallbackLabel: "Planilha 1" },
+    { id: "sheet-2", role: "extra", label: "Planilha 2", fallbackLabel: "Planilha 2" },
   ]);
   const [busySlot, setBusySlot] = useState<string | null>(null);
   const [matchMode, setMatchMode] = useState<MatchMode>("smart");
@@ -448,7 +460,14 @@ export default function CrossCheckPage() {
       await frame();
       const parsed = await readCrossFile(file);
       if (!parsed.sheets.length) throw new Error("A planilha não possui abas legíveis.");
-      updateSlot(id, (slot) => ({ ...slot, file: parsed }));
+      setSlots((current) => current.map((slot) => {
+        if (slot.id !== id) return slot;
+        const fromFile = labelFromFileName(file.name);
+        const taken = current.filter((item) => item.id !== id).map((item) => item.label);
+        const label = slot.renamed || !fromFile ? slot.label : uniqueLabelAmong(fromFile, taken);
+        return { ...slot, file: parsed, label };
+      }));
+      invalidate();
     } catch (cause) {
       setError(cause instanceof Error ? `Não foi possível ler ${file.name}: ${cause.message}` : `Não foi possível ler ${file.name}.`);
     } finally {
@@ -459,7 +478,8 @@ export default function CrossCheckPage() {
   const addSlot = () => {
     setSlots((current) => {
       const nextIndex = current.length + 1;
-      return [...current, { id: `sheet-${Date.now()}`, role: "extra", label: `Planilha ${nextIndex}` }];
+      const label = `Planilha ${nextIndex}`;
+      return [...current, { id: `sheet-${Date.now()}`, role: "extra", label, fallbackLabel: label }];
     });
     invalidate();
   };
@@ -515,8 +535,8 @@ export default function CrossCheckPage() {
 
   const reset = () => {
     setSlots([
-      { id: "sheet-1", role: "extra", label: "Planilha 1" },
-      { id: "sheet-2", role: "extra", label: "Planilha 2" },
+      { id: "sheet-1", role: "extra", label: "Planilha 1", fallbackLabel: "Planilha 1" },
+      { id: "sheet-2", role: "extra", label: "Planilha 2", fallbackLabel: "Planilha 2" },
     ]);
     setOutput(null);
     setError("");
@@ -526,7 +546,6 @@ export default function CrossCheckPage() {
     setExpanded(null);
   };
 
-  const filterCount = (filter: string) => output ? filterCrossRows(output.rows, filter, "").length : 0;
   const metrics = output?.metrics;
   const generalLabel = output?.generalLabel || "";
   const plannedLabel = output?.plannedLabel || "";
@@ -534,6 +553,14 @@ export default function CrossCheckPage() {
     () => crossFilters({ generalLabel, plannedLabel, sheets: output?.sources.length || 0 }) as [string, string][],
     [generalLabel, plannedLabel, output],
   );
+  // Uma única passada pelas linhas por filtro, memoizada — em vez de recontar
+  // a cada tecla digitada na busca, já que a contagem dos rótulos não depende
+  // do texto buscado.
+  const filterCounts = useMemo(() => {
+    if (!output) return {} as Record<string, number>;
+    return Object.fromEntries(filters.map(([key]) => [key, filterCrossRows(output.rows, key, "").length]));
+  }, [output, filters]);
+  const filterCount = (filter: string) => filterCounts[filter] ?? 0;
 
   // As colunas da tabela seguem as planilhas carregadas: as de referência e de
   // alocação só existem quando esses papéis foram atribuídos.
@@ -641,12 +668,12 @@ export default function CrossCheckPage() {
               busy={busySlot === slot.id}
               removable={slots.length > 1}
               onUpload={(file) => handleFile(slot.id, file)}
-              onRemoveFile={() => updateSlot(slot.id, (item) => ({ ...item, file: undefined }))}
+              onRemoveFile={() => updateSlot(slot.id, (item) => ({ ...item, file: undefined, label: item.renamed ? item.label : item.fallbackLabel }))}
               onRemoveSlot={() => { setSlots((current) => current.filter((item) => item.id !== slot.id)); invalidate(); }}
               onSheet={(selectedSheet) => updateSlot(slot.id, (item) => item.file ? { ...item, file: { ...item.file, selectedSheet } } : item)}
               onMapping={(field, column) => updateSheet(slot.id, (sheet) => ({ ...sheet, mapping: { ...sheet.mapping, [field]: column } }))}
               onExtras={(extras) => updateSheet(slot.id, (sheet) => ({ ...sheet, mapping: { ...sheet.mapping, extras } }))}
-              onLabel={(label) => updateSlot(slot.id, (item) => ({ ...item, label }))}
+              onLabel={(label) => updateSlot(slot.id, (item) => ({ ...item, label, renamed: true }))}
               onRole={(role) => updateSlot(slot.id, (item) => ({ ...item, role }))}
             />
           ))}

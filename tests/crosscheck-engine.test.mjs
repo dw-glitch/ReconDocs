@@ -7,11 +7,15 @@ import {
   filterCrossRows,
 } from "../app/lib/crosscheck-engine.js";
 import {
+  countMappedRecords,
   detectHeaderRow,
   headerAliasScore,
+  labelFromFileName,
   looksLikeDate,
   looksLikeIdentifier,
   profileRows,
+  sampleColumnValues,
+  uniqueLabelAmong,
 } from "../app/lib/sheet-profile.js";
 
 function source(id, role, label, records) {
@@ -259,4 +263,69 @@ test("marca os exclusivos de uma única planilha em qualquer configuração", ()
   assert.equal(rows.get("X-1").exclusiveIn, null);
   assert.equal(output.metrics.exclusive, 1);
   assert.equal(filterCrossRows(output.rows, "exclusive", "").length, 1);
+});
+
+test("o nome da planilha vem do arquivo carregado, sem a extensão", () => {
+  assert.equal(labelFromFileName("Consulta Geral SIGEM 12-08-2026.xlsx"), "Consulta Geral SIGEM 12-08-2026");
+  assert.equal(labelFromFileName("documentos previstos.XLSM"), "documentos previstos");
+  assert.equal(labelFromFileName("  base.csv  "), "base");
+  // Só a extensão do fim é removida: pontos no meio do nome ficam.
+  assert.equal(labelFromFileName("Relatorio.v2.final.xls"), "Relatorio.v2.final");
+  assert.equal(labelFromFileName("sem extensao"), "sem extensao");
+  assert.equal(labelFromFileName(""), "");
+});
+
+test("dois arquivos de mesmo nome viram planilhas com nomes distintos", () => {
+  assert.equal(uniqueLabelAmong("Consulta Geral", []), "Consulta Geral");
+  assert.equal(uniqueLabelAmong("Consulta Geral", ["Planilha 2"]), "Consulta Geral");
+  assert.equal(uniqueLabelAmong("Consulta Geral", ["Consulta Geral"]), "Consulta Geral (2)");
+  assert.equal(uniqueLabelAmong("Consulta Geral", ["Consulta Geral", "Consulta Geral (2)"]), "Consulta Geral (3)");
+  // A comparação ignora a caixa, para não gerar dois nomes que se confundem.
+  assert.equal(uniqueLabelAmong("consulta geral", ["Consulta Geral"]), "consulta geral (2)");
+});
+
+test("amostra de valores mostra exemplos distintos, na ordem de aparição", () => {
+  const rows = [
+    ["Documento", "Status"],
+    ["ET-001", "Aprovado"],
+    ["ET-002", "Aprovado"],
+    ["ET-001", "Reprovado"],
+    ["", "Vazio"],
+    ["ET-003", ""],
+  ];
+  const profile = profileRows(rows);
+  assert.deepEqual(sampleColumnValues(rows, profile.mapping.document, profile.dataStart), ["ET-001", "ET-002", "ET-003"]);
+  assert.deepEqual(sampleColumnValues(rows, profile.mapping.document, profile.dataStart, 1), ["ET-001"]);
+  // A amostra de uma coluna reflete a coluna inteira, independente do documento na mesma linha.
+  assert.deepEqual(sampleColumnValues(rows, profile.mapping.status, profile.dataStart), ["Aprovado", "Reprovado", "Vazio"]);
+});
+
+test("countMappedRecords conta o que recordFromRow realmente produziria", () => {
+  const rows = [
+    ["Documento", "Status"],
+    ["ET-001", "Aprovado"],
+    ["", "Sem documento"],
+    ["ET-002", ""],
+    ["Documento", ""], // repete o cabeçalho, não conta
+  ];
+  const profile = { rows, startRow: 0, ...profileRows(rows) };
+  assert.equal(countMappedRecords(profile), 2);
+});
+
+test("countMappedRecords é zero sem coluna de documento mapeada", () => {
+  const rows = [["Status"], ["Aprovado"], ["Reprovado"]];
+  const profile = { rows, startRow: 0, ...profileRows(rows) };
+  const withoutDocument = { ...profile, mapping: { ...profile.mapping, document: -1 } };
+  assert.equal(countMappedRecords(withoutDocument), 0);
+});
+
+test("countMappedRecords acusa zero quando a coluna mapeada não tem documentos", () => {
+  const rows = [
+    ["Item", "Documento", "Status"],
+    [1, "", "Aprovado"],
+    [2, "", "Reprovado"],
+  ];
+  const profile = { rows, startRow: 0, ...profileRows(rows) };
+  const forced = { ...profile, mapping: { ...profile.mapping, document: 1 } };
+  assert.equal(countMappedRecords(forced), 0);
 });

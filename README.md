@@ -44,11 +44,11 @@ Cruzamento de quantas planilhas você quiser, de qualquer origem e layout. Não 
 
 Carregue quantas planilhas precisar — não há limite de quantidade. Para cada uma você define:
 
-- **Nome no relatório** — o nome que você der aparece em todos os títulos, colunas e indicadores.
+- **Nome no relatório** — vem do nome do arquivo carregado, sem a extensão, e aparece em todos os títulos, colunas e indicadores. Você pode trocá-lo à mão; a partir daí ele é respeitado. Dois arquivos de mesmo nome recebem um sufixo para não se confundirem.
 - **Papel no cruzamento** — `Planilha comum` (padrão), `Base de referência` ou `Base de alocação`.
 - **Aba analisada** e o **mapeamento das colunas**: documento (obrigatório), status, data e quantas outras colunas relevantes forem marcadas.
 
-A aba, a linha de cabeçalho e as colunas são detectadas automaticamente em qualquer layout e podem ser corrigidas à mão.
+A aba, a linha de cabeçalho e as colunas são detectadas automaticamente em qualquer layout e podem ser corrigidas à mão. Cada seletor de coluna mostra até três valores reais daquela coluna, para mapear vendo o conteúdo em vez de adivinhar pelo nome do cabeçalho. Se a coluna escolhida como documento não trouxer nenhum registro, um aviso aparece na hora, antes de rodar o cruzamento.
 
 ### Papéis opcionais
 

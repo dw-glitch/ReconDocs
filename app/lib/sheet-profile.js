@@ -33,6 +33,31 @@ const PLAIN_NUMBER = [
   /^\d{1,3}(,\d{3})+(\.\d+)?$/,
 ];
 
+const SPREADSHEET_EXTENSION = /\.(xlsx|xls|xlsm|csv|tsv)$/i;
+
+/**
+ * Nome de exibição da planilha a partir do arquivo carregado: o próprio nome
+ * do arquivo, sem a extensão. É esse nome que aparece na tela e em todos os
+ * títulos, colunas e abas do relatório.
+ */
+export function labelFromFileName(fileName) {
+  return text(fileName).replace(SPREADSHEET_EXTENSION, "").trim();
+}
+
+/**
+ * Garante que duas planilhas não fiquem com o mesmo nome — dois arquivos de
+ * mesmo nome gerariam colunas e abas indistinguíveis no relatório.
+ */
+export function uniqueLabelAmong(desired, taken = []) {
+  const used = new Set(taken.map((label) => text(label).toLowerCase()));
+  const base = text(desired);
+  if (!used.has(base.toLowerCase())) return base;
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${base} (${suffix})`;
+    if (!used.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
 export function normalizedHeader(value) {
   return norm(value).replace(/[^A-Z0-9]+/g, " ").trim();
 }
@@ -157,6 +182,41 @@ export function profileRows(rows, options = {}) {
   const mapping = detectColumns(rows, headers, dataStart);
   const rowCount = rows.slice(dataStart).filter((row) => (row || []).some((cell) => text(cell))).length;
   return { headerIndex, dataStart, headers, mapping, rowCount };
+}
+
+/**
+ * Até `limit` valores distintos e não vazios de uma coluna, na ordem em que
+ * aparecem — usados para mostrar ao usuário o que uma coluna realmente
+ * contém, em vez de ele escolher apenas pelo nome do cabeçalho.
+ */
+export function sampleColumnValues(rows, column, dataStart, limit = 3) {
+  const seen = new Set();
+  const samples = [];
+  for (let index = dataStart; index < rows.length && samples.length < limit; index += 1) {
+    const value = text((rows[index] || [])[column]);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    samples.push(value);
+  }
+  return samples;
+}
+
+/**
+ * Quantos registros o mapeamento atual da aba produziria — a mesma regra de
+ * `recordFromRow`, mas contando em vez de montar cada registro. Serve para
+ * avisar cedo quando uma coluna mapeada não gera nenhum documento, sem
+ * esperar o cruzamento rodar.
+ *
+ * @param profile perfil completo da aba, incluindo `rows` (a matriz lida do
+ *   arquivo) além de `headers`, `mapping`, `dataStart` e `startRow`.
+ */
+export function countMappedRecords(profile) {
+  if (!profile || profile.mapping.document < 0) return 0;
+  let count = 0;
+  for (let index = profile.dataStart; index < profile.rows.length; index += 1) {
+    if (recordFromRow(profile, profile.rows[index] || [], index)) count += 1;
+  }
+  return count;
 }
 
 /**
