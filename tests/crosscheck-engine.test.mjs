@@ -17,6 +17,7 @@ import {
   looksLikeIdentifier,
   profileRows,
   sampleColumnValues,
+  spreadsheetColumnLetter,
   uniqueLabelAmong,
 } from "../app/lib/sheet-profile.js";
 
@@ -407,4 +408,15 @@ test("overlapSegments distingue 'algumas' de 'exclusivo' com três ou mais plani
 test("overlapSegments não quebra com metrics vazio", () => {
   assert.deepEqual(overlapSegments(undefined).map((segment) => segment.count), [0, 0, 0]);
   assert.deepEqual(overlapSegments(summarizeCross([], [])).map((segment) => segment.count), [0, 0, 0]);
+});
+
+test("spreadsheetColumnLetter segue a notação do Excel, com deslocamento opcional", () => {
+  assert.equal(spreadsheetColumnLetter(0), "A");
+  assert.equal(spreadsheetColumnLetter(25), "Z");
+  assert.equal(spreadsheetColumnLetter(26), "AA");
+  assert.equal(spreadsheetColumnLetter(27), "AB");
+  // Planilha cujo intervalo usado começa na coluna C (índice 2): a primeira
+  // coluna mapeada continua sendo a letra real da planilha original.
+  assert.equal(spreadsheetColumnLetter(0, 2), "C");
+  assert.equal(spreadsheetColumnLetter(1, 2), "D");
 });

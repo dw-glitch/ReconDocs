@@ -48,7 +48,7 @@ Carregue quantas planilhas precisar — não há limite de quantidade. Para cada
 - **Papel no cruzamento** — `Planilha comum` (padrão), `Base de referência` ou `Base de alocação`.
 - **Aba analisada** e o **mapeamento das colunas**: documento (obrigatório), status, data e quantas outras colunas relevantes forem marcadas.
 
-A aba, a linha de cabeçalho e as colunas são detectadas automaticamente em qualquer layout e podem ser corrigidas à mão. Cada seletor de coluna mostra até três valores reais daquela coluna, para mapear vendo o conteúdo em vez de adivinhar pelo nome do cabeçalho. Se a coluna escolhida como documento não trouxer nenhum registro, um aviso aparece na hora, antes de rodar o cruzamento.
+A aba, a linha de cabeçalho e as colunas de documento, status e data são detectadas automaticamente em qualquer layout e podem ser corrigidas à mão. Os seletores dessas três colunas mostram a **letra da coluna** (Coluna A, Coluna B, ...) — não o texto do cabeçalho, que pode ser ambíguo ou mal detectado em planilhas confusas. O cabeçalho de verdade e até três valores reais daquela coluna aparecem logo abaixo, como conferência. Se a coluna escolhida como documento não trouxer nenhum registro, um aviso aparece na hora, antes de rodar o cruzamento. Já a lista de "outras colunas relevantes" mostra o nome de cada coluna normalmente, para você reconhecer pelo conteúdo o que está marcando.
 
 Corrigir o mapeamento manualmente fica salvo no navegador pelo layout de cabeçalhos: uma planilha atualizada diariamente com as mesmas colunas — caso dos Documentos Previstos — já chega mapeada da próxima vez, mesmo em um arquivo novo.
 

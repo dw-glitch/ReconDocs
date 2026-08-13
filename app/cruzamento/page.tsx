@@ -25,7 +25,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { countMappedRecords, labelFromFileName, profileRows, recordFromRow, sampleColumnValues, uniqueLabelAmong } from "../lib/sheet-profile";
+import { countMappedRecords, labelFromFileName, profileRows, recordFromRow, sampleColumnValues, spreadsheetColumnLetter, uniqueLabelAmong } from "../lib/sheet-profile";
 import { readMappingPreset, writeMappingPreset } from "../lib/mapping-presets";
 import { CROSS_ROLE_HINTS, CROSS_ROLE_LABELS, crossFilters, crossReference, filterCrossRows, MATCH_MODES, overlapSegments } from "../lib/crosscheck-engine";
 import { createBrandLogoDataUrl } from "../lib/report-branding";
@@ -44,6 +44,7 @@ type CrossSheetProfile = {
   headerIndex: number;
   dataStart: number;
   headers: string[];
+  columnLetters: string[];
   mapping: CrossMapping;
   rowCount: number;
 };
@@ -187,10 +188,11 @@ async function readCrossFile(file: File): Promise<CrossFile> {
       raw: true,
       blankrows: true,
     }) as unknown[][];
-    const profile = profileRows(rows, { columnLabel: (index: number) => `Coluna ${XLSX.utils.encode_col(range.s.c + index)}` });
+    const profile = profileRows(rows, { columnLabel: (index: number) => `Coluna ${spreadsheetColumnLetter(index, range.s.c)}` });
     const preset = typeof window !== "undefined" ? readMappingPreset(window.localStorage, profile.headers) : null;
     const mapping = preset ? { ...profile.mapping, ...preset } : profile.mapping;
-    return { name, rows, startRow: range.s.r, ...profile, mapping } as CrossSheetProfile;
+    const columnLetters = profile.headers.map((_, index) => spreadsheetColumnLetter(index, range.s.c));
+    return { name, rows, startRow: range.s.r, ...profile, mapping, columnLetters } as CrossSheetProfile;
   });
   const withDocument = sheets.findIndex((sheet) => sheet.mapping.document >= 0 && sheet.rowCount > 0);
   return { fileName: file.name, fileSize: file.size, sheets, selectedSheet: Math.max(0, withDocument) };
@@ -242,8 +244,13 @@ function MappingSelect({ sheet, field, onChange }: { sheet: CrossSheetProfile; f
       <span>{FIELD_LABELS[field]}{field === "document" ? " *" : ""}</span>
       <select value={column} onChange={(event) => onChange(Number(event.target.value))}>
         <option value={-1}>Não usar</option>
-        {sheet.headers.map((header, index) => <option key={`${header}-${index}`} value={index}>{header}</option>)}
+        {sheet.columnLetters.map((letter, index) => (
+          <option key={letter} value={index} title={sheet.headers[index]}>Coluna {letter}</option>
+        ))}
       </select>
+      {column >= 0 && sheet.headers[column] !== `Coluna ${sheet.columnLetters[column]}` && (
+        <small className="mapping-sample">Cabeçalho: {sheet.headers[column]}</small>
+      )}
       {samples.length > 0 && <small className="mapping-sample">Exemplos: {samples.join(" · ")}</small>}
     </label>
   );
@@ -273,6 +280,13 @@ function SlotCard({ slot, index, busy, removable, onUpload, onRemoveFile, onRemo
     : documentCount === 0
       ? "empty"
       : "ok";
+  // A letra identifica a coluna sem ambiguidade; o cabeçalho só aparece
+  // junto quando é um cabeçalho de verdade, não o rótulo de reserva "Coluna X".
+  const columnLabel = (columnIndex: number) => {
+    const letter = sheet!.columnLetters[columnIndex];
+    const header = sheet!.headers[columnIndex];
+    return header === `Coluna ${letter}` ? `Coluna ${letter}` : `Coluna ${letter} (${header})`;
+  };
 
   return (
     <article className={`upload-card ${slot.file ? "has-file" : ""}`}>
@@ -310,8 +324,8 @@ function SlotCard({ slot, index, busy, removable, onUpload, onRemoveFile, onRemo
             {detectedState === "ok" ? <CircleCheck size={16} /> : <AlertTriangle size={16} />}
             <span>
               {detectedState === "unmapped" && "Selecione a coluna do documento"}
-              {detectedState === "empty" && `A coluna “${sheet!.headers[sheet!.mapping.document]}” não trouxe nenhum documento. Verifique o mapeamento.`}
-              {detectedState === "ok" && `Documento: ${sheet!.headers[sheet!.mapping.document]}${sheet!.mapping.status >= 0 ? ` · Status: ${sheet!.headers[sheet!.mapping.status]}` : ""} · ${formatNumber(documentCount)} encontrado(s)`}
+              {detectedState === "empty" && `A ${columnLabel(sheet!.mapping.document)} não trouxe nenhum documento. Verifique o mapeamento.`}
+              {detectedState === "ok" && `Documento: ${columnLabel(sheet!.mapping.document)}${sheet!.mapping.status >= 0 ? ` · Status: ${columnLabel(sheet!.mapping.status)}` : ""} · ${formatNumber(documentCount)} encontrado(s)`}
             </span>
           </div>
           <div className="slot-identity">
