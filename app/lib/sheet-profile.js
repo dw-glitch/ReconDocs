@@ -33,6 +33,31 @@ const PLAIN_NUMBER = [
   /^\d{1,3}(,\d{3})+(\.\d+)?$/,
 ];
 
+const SPREADSHEET_EXTENSION = /\.(xlsx|xls|xlsm|csv|tsv)$/i;
+
+/**
+ * Nome de exibição da planilha a partir do arquivo carregado: o próprio nome
+ * do arquivo, sem a extensão. É esse nome que aparece na tela e em todos os
+ * títulos, colunas e abas do relatório.
+ */
+export function labelFromFileName(fileName) {
+  return text(fileName).replace(SPREADSHEET_EXTENSION, "").trim();
+}
+
+/**
+ * Garante que duas planilhas não fiquem com o mesmo nome — dois arquivos de
+ * mesmo nome gerariam colunas e abas indistinguíveis no relatório.
+ */
+export function uniqueLabelAmong(desired, taken = []) {
+  const used = new Set(taken.map((label) => text(label).toLowerCase()));
+  const base = text(desired);
+  if (!used.has(base.toLowerCase())) return base;
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${base} (${suffix})`;
+    if (!used.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
 export function normalizedHeader(value) {
   return norm(value).replace(/[^A-Z0-9]+/g, " ").trim();
 }

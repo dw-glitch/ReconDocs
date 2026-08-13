@@ -9,9 +9,11 @@ import {
 import {
   detectHeaderRow,
   headerAliasScore,
+  labelFromFileName,
   looksLikeDate,
   looksLikeIdentifier,
   profileRows,
+  uniqueLabelAmong,
 } from "../app/lib/sheet-profile.js";
 
 function source(id, role, label, records) {
@@ -259,4 +261,23 @@ test("marca os exclusivos de uma única planilha em qualquer configuração", ()
   assert.equal(rows.get("X-1").exclusiveIn, null);
   assert.equal(output.metrics.exclusive, 1);
   assert.equal(filterCrossRows(output.rows, "exclusive", "").length, 1);
+});
+
+test("o nome da planilha vem do arquivo carregado, sem a extensão", () => {
+  assert.equal(labelFromFileName("Consulta Geral SIGEM 12-08-2026.xlsx"), "Consulta Geral SIGEM 12-08-2026");
+  assert.equal(labelFromFileName("documentos previstos.XLSM"), "documentos previstos");
+  assert.equal(labelFromFileName("  base.csv  "), "base");
+  // Só a extensão do fim é removida: pontos no meio do nome ficam.
+  assert.equal(labelFromFileName("Relatorio.v2.final.xls"), "Relatorio.v2.final");
+  assert.equal(labelFromFileName("sem extensao"), "sem extensao");
+  assert.equal(labelFromFileName(""), "");
+});
+
+test("dois arquivos de mesmo nome viram planilhas com nomes distintos", () => {
+  assert.equal(uniqueLabelAmong("Consulta Geral", []), "Consulta Geral");
+  assert.equal(uniqueLabelAmong("Consulta Geral", ["Planilha 2"]), "Consulta Geral");
+  assert.equal(uniqueLabelAmong("Consulta Geral", ["Consulta Geral"]), "Consulta Geral (2)");
+  assert.equal(uniqueLabelAmong("Consulta Geral", ["Consulta Geral", "Consulta Geral (2)"]), "Consulta Geral (3)");
+  // A comparação ignora a caixa, para não gerar dois nomes que se confundem.
+  assert.equal(uniqueLabelAmong("consulta geral", ["Consulta Geral"]), "consulta geral (2)");
 });

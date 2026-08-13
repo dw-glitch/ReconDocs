@@ -44,7 +44,7 @@ Cruzamento de quantas planilhas você quiser, de qualquer origem e layout. Não 
 
 Carregue quantas planilhas precisar — não há limite de quantidade. Para cada uma você define:
 
-- **Nome no relatório** — o nome que você der aparece em todos os títulos, colunas e indicadores.
+- **Nome no relatório** — vem do nome do arquivo carregado, sem a extensão, e aparece em todos os títulos, colunas e indicadores. Você pode trocá-lo à mão; a partir daí ele é respeitado. Dois arquivos de mesmo nome recebem um sufixo para não se confundirem.
 - **Papel no cruzamento** — `Planilha comum` (padrão), `Base de referência` ou `Base de alocação`.
 - **Aba analisada** e o **mapeamento das colunas**: documento (obrigatório), status, data e quantas outras colunas relevantes forem marcadas.
 

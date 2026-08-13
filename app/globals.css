@@ -297,3 +297,6 @@ td:first-child small { display: block; margin-top: 5px; color: #8798a4; font-siz
 .situation-divergent, .situation-exclusive, .situation-partial { color: var(--amber); background: var(--amber-soft); }
 .situation-missing_reference, .situation-not_allocated { color: var(--red); background: var(--red-soft); }
 .situation-text { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 11px; }
+
+/* O nome da planilha vem do arquivo e pode ser longo */
+.slot-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

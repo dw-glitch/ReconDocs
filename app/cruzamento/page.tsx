@@ -25,7 +25,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { profileRows, recordFromRow } from "../lib/sheet-profile";
+import { labelFromFileName, profileRows, recordFromRow, uniqueLabelAmong } from "../lib/sheet-profile";
 import { CROSS_ROLE_HINTS, CROSS_ROLE_LABELS, crossFilters, crossReference, filterCrossRows, MATCH_MODES } from "../lib/crosscheck-engine";
 import { createBrandLogoDataUrl } from "../lib/report-branding";
 import { buildCrossWorkbook } from "../lib/cross-report";
@@ -54,7 +54,7 @@ type CrossFile = {
   selectedSheet: number;
 };
 
-type CrossSlot = { id: string; role: CrossRole; label: string; file?: CrossFile };
+type CrossSlot = { id: string; role: CrossRole; label: string; fallbackLabel: string; renamed?: boolean; file?: CrossFile };
 
 type CrossRecord = {
   document: string;
@@ -261,7 +261,7 @@ function SlotCard({ slot, index, busy, removable, onUpload, onRemoveFile, onRemo
     <article className={`upload-card ${slot.file ? "has-file" : ""}`}>
       <div className="upload-card-heading">
         <span className="step-number">{String(index + 1).padStart(2, "0")}</span>
-        <h3>{slot.label}</h3>
+        <h3 className="slot-title" title={slot.label}>{slot.label}</h3>
         {removable && <button type="button" className="icon-button slot-remove" onClick={onRemoveSlot} aria-label={`Remover ${slot.label}`}><X size={16} /></button>}
       </div>
       <p className="slot-hint">{ROLE_HINTS[slot.role]}</p>
@@ -393,8 +393,8 @@ function DetailPanel({ row, sources }: { row: CrossRow; sources: (CrossSourceRef
 
 export default function CrossCheckPage() {
   const [slots, setSlots] = useState<CrossSlot[]>([
-    { id: "sheet-1", role: "extra", label: "Planilha 1" },
-    { id: "sheet-2", role: "extra", label: "Planilha 2" },
+    { id: "sheet-1", role: "extra", label: "Planilha 1", fallbackLabel: "Planilha 1" },
+    { id: "sheet-2", role: "extra", label: "Planilha 2", fallbackLabel: "Planilha 2" },
   ]);
   const [busySlot, setBusySlot] = useState<string | null>(null);
   const [matchMode, setMatchMode] = useState<MatchMode>("smart");
@@ -448,7 +448,14 @@ export default function CrossCheckPage() {
       await frame();
       const parsed = await readCrossFile(file);
       if (!parsed.sheets.length) throw new Error("A planilha não possui abas legíveis.");
-      updateSlot(id, (slot) => ({ ...slot, file: parsed }));
+      setSlots((current) => current.map((slot) => {
+        if (slot.id !== id) return slot;
+        const fromFile = labelFromFileName(file.name);
+        const taken = current.filter((item) => item.id !== id).map((item) => item.label);
+        const label = slot.renamed || !fromFile ? slot.label : uniqueLabelAmong(fromFile, taken);
+        return { ...slot, file: parsed, label };
+      }));
+      invalidate();
     } catch (cause) {
       setError(cause instanceof Error ? `Não foi possível ler ${file.name}: ${cause.message}` : `Não foi possível ler ${file.name}.`);
     } finally {
@@ -459,7 +466,8 @@ export default function CrossCheckPage() {
   const addSlot = () => {
     setSlots((current) => {
       const nextIndex = current.length + 1;
-      return [...current, { id: `sheet-${Date.now()}`, role: "extra", label: `Planilha ${nextIndex}` }];
+      const label = `Planilha ${nextIndex}`;
+      return [...current, { id: `sheet-${Date.now()}`, role: "extra", label, fallbackLabel: label }];
     });
     invalidate();
   };
@@ -515,8 +523,8 @@ export default function CrossCheckPage() {
 
   const reset = () => {
     setSlots([
-      { id: "sheet-1", role: "extra", label: "Planilha 1" },
-      { id: "sheet-2", role: "extra", label: "Planilha 2" },
+      { id: "sheet-1", role: "extra", label: "Planilha 1", fallbackLabel: "Planilha 1" },
+      { id: "sheet-2", role: "extra", label: "Planilha 2", fallbackLabel: "Planilha 2" },
     ]);
     setOutput(null);
     setError("");
@@ -641,12 +649,12 @@ export default function CrossCheckPage() {
               busy={busySlot === slot.id}
               removable={slots.length > 1}
               onUpload={(file) => handleFile(slot.id, file)}
-              onRemoveFile={() => updateSlot(slot.id, (item) => ({ ...item, file: undefined }))}
+              onRemoveFile={() => updateSlot(slot.id, (item) => ({ ...item, file: undefined, label: item.renamed ? item.label : item.fallbackLabel }))}
               onRemoveSlot={() => { setSlots((current) => current.filter((item) => item.id !== slot.id)); invalidate(); }}
               onSheet={(selectedSheet) => updateSlot(slot.id, (item) => item.file ? { ...item, file: { ...item.file, selectedSheet } } : item)}
               onMapping={(field, column) => updateSheet(slot.id, (sheet) => ({ ...sheet, mapping: { ...sheet.mapping, [field]: column } }))}
               onExtras={(extras) => updateSheet(slot.id, (sheet) => ({ ...sheet, mapping: { ...sheet.mapping, extras } }))}
-              onLabel={(label) => updateSlot(slot.id, (item) => ({ ...item, label }))}
+              onLabel={(label) => updateSlot(slot.id, (item) => ({ ...item, label, renamed: true }))}
               onRole={(role) => updateSlot(slot.id, (item) => ({ ...item, role }))}
             />
           ))}
