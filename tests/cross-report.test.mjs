@@ -80,7 +80,7 @@ test("Aba 1 — Resumo Executivo lista os indicadores consolidados", () => {
   assert.equal(indicators.get("Total de documentos em comum"), 2);
   assert.equal(indicators.get("Total de documentos alocados"), 3);
   assert.equal(indicators.get("Total de documentos não alocados"), 1);
-  assert.equal(indicators.get("Total de divergências de status"), 1);
+  assert.equal(indicators.get("Total de divergências"), 1);
   assert.equal(indicators.get("Encontrados em Checklist de Campo"), 1);
 });
 
@@ -181,6 +181,7 @@ test("Aba 5 — Divergências traz uma coluna de status por planilha", () => {
   // Documentos Previstos não tem status mapeado: a coluna vazia não é criada.
   assert.deepEqual(values(sheet, 5), [
     "DOCUMENTO",
+    "CAMPO DIVERGENTE",
     "STATUS CONSULTA GERAL",
     "STATUS CHECKLIST DE CAMPO",
     "DIVERGÊNCIA",
@@ -188,10 +189,25 @@ test("Aba 5 — Divergências traz uma coluna de status por planilha", () => {
   assert.equal(sheet.rowCount, 6);
   assert.deepEqual(values(sheet, 6), [
     "DOC-001",
+    "Status",
     "Aprovado",
     "Reprovado",
     "Consulta Geral: Aprovado × Checklist de Campo: Reprovado",
   ]);
+});
+
+test("Aba 5 — Divergências também cobre colunas complementares, além do status", () => {
+  const record = (document, status = "", extra = {}) => ({ document, status, date: "", extras: {}, rowNumber: 2, ...extra });
+  const output = crossReference([
+    { id: "a", role: "extra", label: "Planilha 1", records: [record("DOC-001", "Aprovado", { extras: { Revisão: "A" } })] },
+    { id: "b", role: "extra", label: "Planilha 2", records: [record("DOC-001", "Aprovado", { extras: { Revisão: "B" } })] },
+  ]);
+  const workbook = buildCrossWorkbook(output, { logoBase64: LOGO });
+  const sheet = workbook.getWorksheet("Divergências");
+  const row = values(sheet, 6);
+  assert.equal(row[0], "DOC-001");
+  assert.equal(row[1], "Revisão");
+  assert.match(row[row.length - 1], /Revisão — Planilha 1: A × Planilha 2: B/);
 });
 
 test("o relatório é gravável como .xlsx", async () => {

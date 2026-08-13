@@ -145,6 +145,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .metric-card.metric-warn::before { background: var(--amber); }
 .metric-card span { display: block; color: var(--muted); font-size: 9.5px; font-weight: 750; letter-spacing: .09em; }
 .metric-card strong { display: block; margin-top: 12px; color: var(--navy-dark); font-size: 27px; line-height: 1; letter-spacing: -.035em; }
+.overlap-bar-wrap { margin-top: 14px; padding: 15px 18px; background: var(--paper); border: 1px solid var(--line); border-radius: 11px; }
+.overlap-bar { height: 12px; display: flex; overflow: hidden; background: #eef2f5; border-radius: 999px; }
+.overlap-segment { display: block; height: 100%; transition: width .25s ease; }
+.overlap-all, .overlap-dot.overlap-all { background: var(--teal); }
+.overlap-partial, .overlap-dot.overlap-partial { background: var(--amber); }
+.overlap-exclusive, .overlap-dot.overlap-exclusive { background: #93a4b0; }
+.overlap-legend { margin-top: 11px; display: flex; flex-wrap: wrap; gap: 16px; }
+.overlap-legend-item { display: flex; align-items: center; gap: 6px; color: #526b7d; font-size: 11px; }
+.overlap-legend-item b { color: var(--navy-dark); font-size: 12.5px; }
+.overlap-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; }
 .insight-strip { margin: 12px 0 18px; padding: 12px 18px; display: grid; grid-template-columns: repeat(4, 1fr); background: #eaf1f5; border-radius: 10px; }
 .insight-strip > div { padding: 2px 15px; display: flex; align-items: baseline; gap: 7px; border-right: 1px solid #ccd9e1; }
 .insight-strip > div:first-child { padding-left: 0; }

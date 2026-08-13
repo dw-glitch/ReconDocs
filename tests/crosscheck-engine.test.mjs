@@ -5,6 +5,8 @@ import {
   crossKey,
   crossReference,
   filterCrossRows,
+  overlapSegments,
+  summarizeCross,
 } from "../app/lib/crosscheck-engine.js";
 import {
   countMappedRecords,
@@ -328,4 +330,81 @@ test("countMappedRecords acusa zero quando a coluna mapeada não tem documentos"
   const profile = { rows, startRow: 0, ...profileRows(rows) };
   const forced = { ...profile, mapping: { ...profile.mapping, document: 1 } };
   assert.equal(countMappedRecords(forced), 0);
+});
+
+test("divergência de campo: mesma coluna extra com valores diferentes entre planilhas", () => {
+  const r = (document, extras = {}) => ({ document, status: "", date: "", extras, rowNumber: 2 });
+  const output = crossReference([
+    source("a", "extra", "Planilha 1", [r("DOC-001", { Revisão: "A" }), r("DOC-002", { Revisão: "B" })]),
+    source("b", "extra", "Planilha 2", [r("DOC-001", { Revisão: "C" }), r("DOC-002", { Revisão: "B" })]),
+  ]);
+  const rows = new Map(output.rows.map((row) => [row.document, row]));
+
+  const divergent = rows.get("DOC-001");
+  assert.equal(divergent.hasDivergence, true);
+  assert.equal(divergent.statusDivergence, false);
+  assert.equal(divergent.fieldDivergences.length, 1);
+  assert.equal(divergent.fieldDivergences[0].field, "Revisão");
+  assert.deepEqual(divergent.fieldDivergences[0].entries.map((entry) => entry.value), ["A", "C"]);
+  assert.equal(divergent.situation.label, "Divergência em Revisão");
+  assert.match(divergent.observations, /Divergência em Revisão: Planilha 1 “A” × Planilha 2 “C”/);
+
+  const equal = rows.get("DOC-002");
+  assert.equal(equal.hasDivergence, false);
+  assert.equal(equal.fieldDivergences.length, 0);
+  assert.equal(equal.situation.label, "Sem pendências");
+
+  assert.equal(output.metrics.divergences, 1);
+  assert.equal(filterCrossRows(output.rows, "divergent", "").length, 1);
+});
+
+test("divergência de status continua tendo prioridade sobre divergência de campo", () => {
+  const output = crossReference([
+    source("a", "extra", "Planilha 1", [{ document: "DOC-001", status: "Aprovado", date: "", extras: { Revisão: "A" }, rowNumber: 2 }]),
+    source("b", "extra", "Planilha 2", [{ document: "DOC-001", status: "Reprovado", date: "", extras: { Revisão: "B" }, rowNumber: 2 }]),
+  ]);
+  assert.equal(output.rows[0].situation.label, "Divergência de status");
+  assert.equal(output.rows[0].fieldDivergences.length, 1);
+});
+
+test("uma coluna extra que só existe em uma planilha não gera divergência", () => {
+  const output = crossReference([
+    source("a", "extra", "Planilha 1", [{ document: "DOC-001", status: "", date: "", extras: { Disciplina: "Elétrica" }, rowNumber: 2 }]),
+    source("b", "extra", "Planilha 2", [{ document: "DOC-001", status: "", date: "", extras: {}, rowNumber: 2 }]),
+  ]);
+  assert.equal(output.rows[0].hasDivergence, false);
+  assert.equal(output.rows[0].fieldDivergences.length, 0);
+});
+
+test("overlapSegments soma ao total e cobre o caso clássico de duas planilhas", () => {
+  const output = crossReference([
+    general([{ document: "DOC-001" }, { document: "DOC-002" }]),
+    planned([{ document: "DOC-001" }, { document: "DOC-900" }]),
+  ]);
+  const segments = overlapSegments(output.metrics);
+  const sum = segments.reduce((total, segment) => total + segment.count, 0);
+  assert.equal(sum, output.metrics.total);
+  // Com duas planilhas não existe "algumas": ou está nas duas, ou é exclusivo de uma.
+  assert.equal(segments.find((segment) => segment.key === "partial").count, 0);
+  assert.equal(segments.find((segment) => segment.key === "all").count, 1);
+  assert.equal(segments.find((segment) => segment.key === "exclusive").count, 2);
+});
+
+test("overlapSegments distingue 'algumas' de 'exclusivo' com três ou mais planilhas", () => {
+  const output = crossReference([
+    general([{ document: "DOC-001" }, { document: "DOC-002" }]),
+    planned([{ document: "DOC-001" }, { document: "DOC-003" }]),
+    extra([{ document: "DOC-001" }]),
+  ]);
+  const segments = overlapSegments(output.metrics);
+  const sum = segments.reduce((total, segment) => total + segment.count, 0);
+  assert.equal(sum, output.metrics.total);
+  assert.equal(segments.find((segment) => segment.key === "all").count, 1); // DOC-001
+  assert.equal(segments.find((segment) => segment.key === "exclusive").count, 2); // DOC-002, DOC-003
+  assert.equal(segments.find((segment) => segment.key === "partial").count, 0);
+});
+
+test("overlapSegments não quebra com metrics vazio", () => {
+  assert.deepEqual(overlapSegments(undefined).map((segment) => segment.count), [0, 0, 0]);
+  assert.deepEqual(overlapSegments(summarizeCross([], [])).map((segment) => segment.count), [0, 0, 0]);
 });

@@ -149,7 +149,7 @@ export function buildCrossWorkbook(output, options = {}) {
     ["Presentes em todas as planilhas", metrics.inAllSheets, "Encontrados em todas as bases carregadas"],
     ["Presentes em apenas algumas planilhas", metrics.partial, "Ausentes em pelo menos uma base"],
     ["Exclusivos de uma única planilha", metrics.exclusive, "Encontrados em uma base e em nenhuma outra"],
-    ["Total de divergências de status", metrics.divergences, "Status diferente entre as planilhas"],
+    ["Total de divergências", metrics.divergences, "Status ou outra coluna comparada com valor diferente entre as planilhas"],
   ];
   if (general) {
     summaryRows.push(
@@ -320,25 +320,41 @@ export function buildCrossWorkbook(output, options = {}) {
     );
   }
 
-  // Aba de Divergências: só entram colunas de planilhas que trazem algum
-  // status entre as linhas divergentes — coluna inteira vazia é ruído.
-  const divergentRows = output.rows.filter((row) => row.statusDivergence);
+  // Aba de Divergências: cobre tanto status quanto qualquer outra coluna
+  // marcada como relevante que apareça com o mesmo nome em mais de uma
+  // planilha. Só entram colunas de status de planilhas que realmente têm
+  // algum valor entre as linhas divergentes — coluna inteira vazia é ruído.
+  const divergentRows = output.rows.filter((row) => row.hasDivergence);
   const divergentSources = output.sources.filter((source) => divergentRows.some((row) => text(row.sources[source.id]?.status)));
-  const divergenceColumns = [{ header: "DOCUMENTO", key: "documento", width: 52 }];
+  const divergenceColumns = [
+    { header: "DOCUMENTO", key: "documento", width: 52 },
+    { header: "CAMPO DIVERGENTE", key: "campo", width: 30 },
+  ];
   for (const source of divergentSources) {
     divergenceColumns.push({ header: `STATUS ${source.label.toUpperCase()}`, key: `status_${source.id}`, width: 30 });
   }
   divergenceColumns.push({ header: "DIVERGÊNCIA", key: "divergencia", width: 72 });
 
+  const divergenceFields = (row) => [
+    ...(row.statusDivergence ? ["Status"] : []),
+    ...row.fieldDivergences.map((divergence) => divergence.field),
+  ].join(", ");
+  const divergenceText = (row) => [
+    ...(row.statusDivergence ? [row.divergentStatuses.map((entry) => `${entry.label}: ${entry.status}`).join(" × ")] : []),
+    ...row.fieldDivergences.map((divergence) => `${divergence.field} — ${divergence.entries.map((entry) => `${entry.label}: ${entry.value}`).join(" × ")}`),
+  ].join(" | ");
+
   const divergences = divergentRows.map((row) => {
     const values = {
       documento: row.document,
-      divergencia: row.divergentStatuses.map((entry) => `${entry.label}: ${entry.status}`).join(" × "),
+      campo: divergenceFields(row),
+      divergencia: divergenceText(row),
     };
     for (const source of divergentSources) values[`status_${source.id}`] = row.sources[source.id]?.status || "";
     return values;
   });
   addDataSheet("Divergências", divergenceColumns, divergences, (row) => {
+    row.getCell(2).font = { bold: true, color: { argb: amber } };
     row.getCell(divergenceColumns.length).font = { bold: true, color: { argb: amber } };
   });
 
@@ -390,10 +406,11 @@ export function buildCrossWorkbook(output, options = {}) {
     ...(general ? [[`Somente ${general.label}`, `Documentos que existem em ${general.label} e em nenhuma outra planilha.`]] : []),
     ...(planned ? [[`Somente ${planned.label}`, `Documentos que existem em ${planned.label} e em nenhuma outra planilha.`]] : []),
     ...(remainingExclusives.length ? [["Exclusivos por planilha", "Documentos que aparecem em uma única planilha, indicando qual."]] : []),
-    ["Divergências", "Documentos cujo status não é o mesmo em todas as planilhas onde aparecem."],
+    ["Divergências", "Documentos com o status ou outra coluna comparada diferente entre as planilhas onde aparecem."],
     ...(others.length ? [["Planilhas Adicionais", "Detalhe de cada documento nas planilhas fora dos dois papéis."]] : []),
     section("A COLUNA SITUAÇÃO"),
     ["Divergência de status", "O documento existe em mais de uma planilha, com status diferente entre elas. Verifique qual está correto."],
+    ["Divergência em <coluna>", "Uma coluna marcada como relevante no mapeamento (ex.: Revisão) tem valor diferente entre as planilhas. Mesma ideia da divergência de status, para qualquer outra coluna comparada."],
     ...(general ? [[`Ausente em ${general.label}`, `O documento aparece em outra planilha, mas não em ${general.label}.`]] : []),
     ...(planned ? [["Não alocado", `O documento não consta em ${planned.label}.`]] : []),
     ["Só em <planilha>", "O documento aparece em uma única planilha e em nenhuma outra."],

@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { countMappedRecords, labelFromFileName, profileRows, recordFromRow, sampleColumnValues, uniqueLabelAmong } from "../lib/sheet-profile";
 import { readMappingPreset, writeMappingPreset } from "../lib/mapping-presets";
-import { CROSS_ROLE_HINTS, CROSS_ROLE_LABELS, crossFilters, crossReference, filterCrossRows, MATCH_MODES } from "../lib/crosscheck-engine";
+import { CROSS_ROLE_HINTS, CROSS_ROLE_LABELS, crossFilters, crossReference, filterCrossRows, MATCH_MODES, overlapSegments } from "../lib/crosscheck-engine";
 import { createBrandLogoDataUrl } from "../lib/report-branding";
 import { buildCrossWorkbook } from "../lib/cross-report";
 
@@ -100,6 +100,8 @@ type CrossRow = {
   statusEntries: { id: string; label: string; role: CrossRole; status: string }[];
   statusDivergence: boolean;
   divergentStatuses: { id: string; label: string; status: string }[];
+  fieldDivergences: { field: string; entries: { id: string; label: string; value: string }[] }[];
+  hasDivergence: boolean;
   otherStatuses: string;
   complements: string;
   onlyGeneral: boolean;
@@ -376,6 +378,36 @@ function SlotCard({ slot, index, busy, removable, onUpload, onRemoveFile, onRemo
   );
 }
 
+type OverlapSegment = { key: string; label: string; count: number; percent: number };
+
+/**
+ * Resumo visual de sobreposição: em quantas planilhas cada documento
+ * aparece, numa barra empilhada que responde em um olhar o que hoje exigiria
+ * ler vários números separados.
+ */
+function OverlapBar({ segments }: { segments: OverlapSegment[] }) {
+  const visible = segments.filter((segment) => segment.count > 0);
+  if (!visible.length) return null;
+  return (
+    <div className="overlap-bar-wrap">
+      <div className="overlap-bar" role="img" aria-label={visible.map((segment) => `${segment.label}: ${formatNumber(segment.count)}`).join(", ")}>
+        {visible.map((segment) => (
+          <span key={segment.key} className={`overlap-segment overlap-${segment.key}`} style={{ width: `${Math.max(segment.percent, visible.length > 1 ? 2 : 100)}%` }} />
+        ))}
+      </div>
+      <div className="overlap-legend">
+        {segments.map((segment) => (
+          <div key={segment.key} className="overlap-legend-item">
+            <span className={`overlap-dot overlap-${segment.key}`} />
+            <b>{formatNumber(segment.count)}</b>
+            <span>{segment.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DetailPanel({ row, sources }: { row: CrossRow; sources: (CrossSourceRef & { total: number })[] }) {
   return (
     <div className="detail-panel">
@@ -625,9 +657,21 @@ export default function CrossCheckPage() {
       key: "status",
       header: "Status por planilha",
       width: generalLabel || plannedLabel ? 22 : 43,
-      cell: (row) => row.statusDivergence
-        ? <span className="difference-text status-divergence">{row.divergentStatuses.map((entry) => `${entry.label}: ${entry.status}`).join(" × ")}</span>
-        : <span className="nt-result">{row.statusEntries.map((entry) => `${entry.label}: ${entry.status}`)[0] || "Sem status informado"}</span>,
+      cell: (row) => {
+        if (row.statusDivergence) {
+          return <span className="difference-text status-divergence">{row.divergentStatuses.map((entry) => `${entry.label}: ${entry.status}`).join(" × ")}</span>;
+        }
+        if (row.fieldDivergences.length) {
+          const first = row.fieldDivergences[0];
+          return (
+            <span className="difference-text status-divergence">
+              {first.field}: {first.entries.map((entry) => `${entry.label}: ${entry.value}`).join(" × ")}
+              {row.fieldDivergences.length > 1 && ` (+${row.fieldDivergences.length - 1})`}
+            </span>
+          );
+        }
+        return <span className="nt-result">{row.statusEntries.map((entry) => `${entry.label}: ${entry.status}`)[0] || "Sem status informado"}</span>;
+      },
     });
 
     columns.push({
@@ -759,8 +803,10 @@ export default function CrossCheckPage() {
             {generalLabel && plannedLabel && <article className="metric-card metric-good"><span>EM COMUM</span><strong>{formatNumber(metrics.inCommon)}</strong></article>}
           </div>
 
+          <OverlapBar segments={overlapSegments(metrics)} />
+
           <div className="insight-strip">
-            <div><b>{formatNumber(metrics.divergences)}</b><span>divergências de status</span></div>
+            <div><b>{formatNumber(metrics.divergences)}</b><span>divergências</span></div>
             <div><b>{formatNumber(metrics.sheets)}</b><span>planilhas cruzadas</span></div>
             {generalLabel
               ? <div><b>{formatNumber(metrics.onlyGeneral)}</b><span>só em {generalLabel}</span></div>
