@@ -291,3 +291,9 @@ td:first-child small { display: block; margin-top: 5px; color: #8798a4; font-siz
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Situação: o rótulo único que resume o que fazer com o documento */
+.situation-ok { color: var(--teal); background: var(--teal-soft); }
+.situation-divergent, .situation-exclusive, .situation-partial { color: var(--amber); background: var(--amber-soft); }
+.situation-missing_reference, .situation-not_allocated { color: var(--red); background: var(--red-soft); }
+.situation-text { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 11px; }

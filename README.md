@@ -75,12 +75,30 @@ Para cada documento: em quais planilhas existe, o status em cada uma, o que est�
 | Aba | Quando aparece | Conteúdo |
 | --- | --- | --- |
 | `Resumo Executivo` | sempre | Indicadores consolidados, total por planilha e critério de comparação |
-| `Resultado Consolidado` | sempre | Documento, observações, presença, complementos e uma dupla `Existe`/`Status` por planilha; as colunas de referência e de alocação entram quando esses papéis existem |
+| `Resultado Consolidado` | sempre | Uma linha por documento: `Situação`, observações, presença, complementos e uma dupla `Existe`/`Status` por planilha; as colunas de referência e de alocação entram quando esses papéis existem |
 | `Somente <base de referência>` | com base de referência | Documentos encontrados apenas nessa base |
 | `Somente <base de alocação>` | com base de alocação | Documentos encontrados apenas nessa base |
-| `Exclusivos por planilha` | sempre | Documentos presentes em uma única planilha, com o nome dela |
-| `Divergências` | sempre | Documentos com status diferente entre as planilhas, uma coluna de status por planilha |
+| `Exclusivos por planilha` | quando há exclusivos fora dos papéis | Documentos presentes em uma única planilha, com o nome dela |
+| `Divergências` | sempre | Documentos com status diferente entre as planilhas |
 | `Planilhas Adicionais` | com planilhas além dos papéis | Detalhe por planilha |
+| `Como ler este relatório` | sempre | Legenda das abas, da coluna `Situação` e das demais colunas |
+
+Cada planilha aparece uma única vez no `Resultado Consolidado`: as que já têm coluna dedicada pelo papel não voltam no bloco por planilha, e colunas de status sem nenhum valor não são criadas.
+
+### A coluna Situação
+
+Cada documento recebe um rótulo único, do mais grave para o mais brando, para filtrar direto no Excel:
+
+| Situação | Quando |
+| --- | --- |
+| `Divergência de status` | O status difere entre as planilhas onde o documento aparece |
+| `Ausente em <referência>` | Existe em outra planilha, mas não na base de referência |
+| `Não alocado` | Não consta na base de alocação |
+| `Só em <planilha>` | Aparece em uma única planilha |
+| `Ausente em <planilha>` | Falta em parte das planilhas |
+| `Sem pendências` | Está em todas as planilhas e com status compatível |
+
+As datas são exportadas como data de verdade, com formato `dd/mm/aaaa` — ordenam e filtram no Excel como data, inclusive quando a planilha de origem trazia a data como texto.
 
 ## Executar
 

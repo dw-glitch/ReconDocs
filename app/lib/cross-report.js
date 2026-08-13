@@ -1,7 +1,8 @@
 import ExcelJS from "exceljs";
-import { norm } from "./analysis-engine.js";
+import { norm, text } from "./analysis-engine.js";
 import { MATCH_MODES } from "./crosscheck-engine.js";
 import { addReportBranding, REPORT_COLORS } from "./report-branding.js";
+import { parseDateValue } from "./sheet-profile.js";
 
 export function columnLetter(index) {
   let value = index + 1;
@@ -14,6 +15,36 @@ export function columnLetter(index) {
   return name;
 }
 
+
+const SITUATION_COLORS = {
+  "DIVERGENCIA DE STATUS": REPORT_COLORS.amber,
+  "NAO ALOCADO": REPORT_COLORS.red,
+  "SEM PENDENCIAS": REPORT_COLORS.teal,
+};
+
+/** Pinta a coluna Situação para a leitura de bater o olho. */
+function paintSituation(cell) {
+  const key = norm(cell.value);
+  const color = SITUATION_COLORS[key]
+    || (key.startsWith("AUSENTE") ? REPORT_COLORS.red : key.startsWith("SO EM") ? REPORT_COLORS.amber : REPORT_COLORS.navy);
+  cell.font = { bold: true, color: { argb: color } };
+}
+
+/**
+ * Grava a célula como data de verdade — ordenável e filtrável no Excel —
+ * inclusive quando a planilha de origem trazia a data como texto.
+ */
+function formatDateCell(cell) {
+  const parsed = parseDateValue(cell.value);
+  if (!parsed) return;
+  cell.value = parsed;
+  cell.numFmt = "dd/mm/yyyy";
+  cell.alignment = { vertical: "top", horizontal: "left" };
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat("pt-BR").format(value);
+}
 
 function safeSheetName(name, used) {
   const base = name.replace(/[[\]:*?/\\]/g, " ").slice(0, 31).trim() || "Planilha";
@@ -39,9 +70,14 @@ export function crossReportSheetNames(output) {
   const names = ["Resumo Executivo", "Resultado Consolidado"];
   if (output.generalLabel) names.push(`Somente ${output.generalLabel}`);
   if (output.plannedLabel) names.push(`Somente ${output.plannedLabel}`);
-  names.push("Exclusivos por planilha", "Divergências");
-  const extras = (output.sources || []).filter((source) => source.id !== output.generalId && source.id !== output.plannedId);
+  const dedicated = new Set([output.generalId, output.plannedId].filter(Boolean));
+  if ((output.rows || []).some((row) => row.exclusiveIn && !dedicated.has(row.exclusiveIn.id))) {
+    names.push("Exclusivos por planilha");
+  }
+  names.push("Divergências");
+  const extras = (output.sources || []).filter((source) => !dedicated.has(source.id));
   if (extras.length) names.push("Planilhas Adicionais");
+  names.push("Como ler este relatório");
   const used = new Set();
   return names.map((name) => safeSheetName(name, used));
 }
@@ -148,7 +184,17 @@ export function buildCrossWorkbook(output, options = {}) {
   });
 
   // Aba 2 — Resultado Consolidado
-  const consolidatedColumns = [{ header: "DOCUMENTO", key: "documento", width: 52 }];
+  // Cada planilha aparece uma única vez: as que já têm coluna dedicada pelo
+  // papel não voltam no bloco por planilha, e colunas de status sem nenhum
+  // valor não são criadas.
+  const hasStatus = (sourceId) => output.rows.some((row) => text(row.sources[sourceId]?.status));
+  const dedicatedExists = new Set([general?.id, planned?.id].filter(Boolean));
+  const dedicatedStatus = new Set([general?.id].filter(Boolean));
+
+  const consolidatedColumns = [
+    { header: "DOCUMENTO", key: "documento", width: 52 },
+    { header: "SITUAÇÃO", key: "situacao", width: 30 },
+  ];
   if (general) {
     consolidatedColumns.push(
       { header: `STATUS ${general.label.toUpperCase()}`, key: "statusGeral", width: 28 },
@@ -171,13 +217,20 @@ export function buildCrossWorkbook(output, options = {}) {
 
   const perSourceStart = consolidatedColumns.length + 1;
   for (const source of output.sources) {
-    consolidatedColumns.push({ header: `EXISTE ${source.label.toUpperCase()}`, key: `existe_${source.id}`, width: 20 });
-    consolidatedColumns.push({ header: `STATUS ${source.label.toUpperCase()}`, key: `status_${source.id}`, width: 26 });
+    if (!dedicatedExists.has(source.id)) {
+      consolidatedColumns.push({ header: `EXISTE ${source.label.toUpperCase()}`, key: `existe_${source.id}`, width: 20 });
+    }
+    if (!dedicatedStatus.has(source.id) && hasStatus(source.id)) {
+      consolidatedColumns.push({ header: `STATUS ${source.label.toUpperCase()}`, key: `status_${source.id}`, width: 26 });
+    }
   }
+
+  const dateColumn = general ? consolidatedColumns.findIndex((column) => column.key === "dataGeral") + 1 : 0;
 
   const consolidatedRow = (row) => {
     const values = {
       documento: row.document,
+      situacao: row.situation.label,
       statusGeral: row.generalStatus,
       existeGeral: row.existsGeneral ? "Sim" : "Não",
       existePrevistos: row.existsPlanned ? "Sim" : "Não",
@@ -187,7 +240,7 @@ export function buildCrossWorkbook(output, options = {}) {
         : row.statusEntries.map((entry) => `${entry.label}: ${entry.status}`).join("; "),
       observacoes: row.observations,
       presenca: row.presence.label,
-      dataGeral: row.generalDate,
+      dataGeral: general ? (row.sources[general.id]?.dateValue || row.generalDate) : "",
       complementos: row.complements,
     };
     for (const source of output.sources) {
@@ -211,11 +264,15 @@ export function buildCrossWorkbook(output, options = {}) {
       if (value === "SIM") cell.font = { bold: true, color: { argb: teal } };
       else if (value === "NAO") cell.font = { bold: true, color: { argb: red } };
     }
+    paintSituation(row.getCell(2));
+    if (dateColumn) formatDateCell(row.getCell(dateColumn));
   });
 
-  // Abas exclusivas: por papel, quando atribuído, e sempre a lista geral
+  // Abas exclusivas: uma por papel atribuído e, para as demais planilhas, uma
+  // lista geral — sem repetir nas duas o mesmo documento.
   const exclusiveColumns = [
     { header: "DOCUMENTO", key: "documento", width: 52 },
+    { header: "SITUAÇÃO", key: "situacao", width: 30 },
     { header: "STATUS", key: "status", width: 30 },
     { header: "DATA", key: "data", width: 18 },
     { header: "LINHA DE ORIGEM", key: "linha", width: 16 },
@@ -224,18 +281,24 @@ export function buildCrossWorkbook(output, options = {}) {
   ];
   const exclusiveRow = (row, sourceId) => ({
     documento: row.document,
+    situacao: row.situation.label,
     status: row.sources[sourceId]?.status || "",
-    data: row.sources[sourceId]?.date || "",
+    data: row.sources[sourceId]?.dateValue || row.sources[sourceId]?.date || "",
     linha: row.sources[sourceId]?.rows.join(", ") || "",
     ausente: row.missingIn.map((source) => source.label).join(", "),
     observacoes: row.observations,
   });
+  const paintExclusive = (row) => {
+    paintSituation(row.getCell(2));
+    formatDateCell(row.getCell(4));
+  };
 
   if (general) {
     addDataSheet(
       `Somente ${general.label}`,
       exclusiveColumns,
       output.rows.filter((row) => row.onlyGeneral).map((row) => exclusiveRow(row, general.id)),
+      paintExclusive,
     );
   }
   if (planned) {
@@ -243,30 +306,36 @@ export function buildCrossWorkbook(output, options = {}) {
       `Somente ${planned.label}`,
       exclusiveColumns,
       output.rows.filter((row) => row.onlyPlanned).map((row) => exclusiveRow(row, planned.id)),
+      paintExclusive,
     );
   }
 
-  addDataSheet(
-    "Exclusivos por planilha",
-    [{ header: "PLANILHA", key: "planilha", width: 32 }, ...exclusiveColumns],
-    output.rows
-      .filter((row) => row.exclusiveIn)
-      .map((row) => ({ planilha: row.exclusiveIn.label, ...exclusiveRow(row, row.exclusiveIn.id) })),
-  );
+  const remainingExclusives = output.rows.filter((row) => row.exclusiveIn && !dedicatedExists.has(row.exclusiveIn.id));
+  if (remainingExclusives.length) {
+    addDataSheet(
+      "Exclusivos por planilha",
+      [{ header: "PLANILHA", key: "planilha", width: 32 }, ...exclusiveColumns],
+      remainingExclusives.map((row) => ({ planilha: row.exclusiveIn.label, ...exclusiveRow(row, row.exclusiveIn.id) })),
+      (row) => { paintSituation(row.getCell(3)); formatDateCell(row.getCell(5)); },
+    );
+  }
 
-  // Aba 5 — Divergências
+  // Aba de Divergências: só entram colunas de planilhas que trazem algum
+  // status entre as linhas divergentes — coluna inteira vazia é ruído.
+  const divergentRows = output.rows.filter((row) => row.statusDivergence);
+  const divergentSources = output.sources.filter((source) => divergentRows.some((row) => text(row.sources[source.id]?.status)));
   const divergenceColumns = [{ header: "DOCUMENTO", key: "documento", width: 52 }];
-  for (const source of output.sources) {
+  for (const source of divergentSources) {
     divergenceColumns.push({ header: `STATUS ${source.label.toUpperCase()}`, key: `status_${source.id}`, width: 30 });
   }
   divergenceColumns.push({ header: "DIVERGÊNCIA", key: "divergencia", width: 72 });
 
-  const divergences = output.rows.filter((row) => row.statusDivergence).map((row) => {
+  const divergences = divergentRows.map((row) => {
     const values = {
       documento: row.document,
       divergencia: row.divergentStatuses.map((entry) => `${entry.label}: ${entry.status}`).join(" × "),
     };
-    for (const source of output.sources) values[`status_${source.id}`] = row.sources[source.id]?.status || "";
+    for (const source of divergentSources) values[`status_${source.id}`] = row.sources[source.id]?.status || "";
     return values;
   });
   addDataSheet("Divergências", divergenceColumns, divergences, (row) => {
@@ -294,6 +363,65 @@ export function buildCrossWorkbook(output, options = {}) {
       })));
     addDataSheet("Planilhas Adicionais", extraColumns, extraRows);
   }
+
+  // Aba final — Como ler este relatório
+  const legend = workbook.addWorksheet(safeSheetName("Como ler este relatório", usedNames), { views: [{ state: "frozen", ySplit: 5 }] });
+  legend.columns = [{ width: 38 }, { width: 96 }];
+  addReportBranding(legend, logoImageId, "B", "COMO LER ESTE RELATÓRIO", subtitle);
+  legend.getRow(5).values = ["Item", "O que significa"];
+  legend.getRow(5).height = 25;
+  legend.getRow(5).eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: white } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: teal } };
+    cell.alignment = { vertical: "middle", horizontal: "left" };
+  });
+
+  const section = (title) => [title, ""];
+  const legendRows = [
+    section("AS PLANILHAS CRUZADAS"),
+    ...output.sources.map((source) => [
+      source.label,
+      `${source.id === output.generalId ? "Base de referência. " : source.id === output.plannedId ? "Base de alocação. " : ""}${formatNumber(source.total)} documento(s) encontrado(s) nesta planilha.`,
+    ]),
+    ["Critério de comparação", MATCH_MODES[output.matchMode]],
+    section("AS ABAS"),
+    ["Resumo Executivo", "Os números consolidados do cruzamento, com o total por planilha."],
+    ["Resultado Consolidado", "Uma linha por documento, com a situação e a presença em cada planilha. É a aba para filtrar e trabalhar."],
+    ...(general ? [[`Somente ${general.label}`, `Documentos que existem em ${general.label} e em nenhuma outra planilha.`]] : []),
+    ...(planned ? [[`Somente ${planned.label}`, `Documentos que existem em ${planned.label} e em nenhuma outra planilha.`]] : []),
+    ...(remainingExclusives.length ? [["Exclusivos por planilha", "Documentos que aparecem em uma única planilha, indicando qual."]] : []),
+    ["Divergências", "Documentos cujo status não é o mesmo em todas as planilhas onde aparecem."],
+    ...(others.length ? [["Planilhas Adicionais", "Detalhe de cada documento nas planilhas fora dos dois papéis."]] : []),
+    section("A COLUNA SITUAÇÃO"),
+    ["Divergência de status", "O documento existe em mais de uma planilha, com status diferente entre elas. Verifique qual está correto."],
+    ...(general ? [[`Ausente em ${general.label}`, `O documento aparece em outra planilha, mas não em ${general.label}.`]] : []),
+    ...(planned ? [["Não alocado", `O documento não consta em ${planned.label}.`]] : []),
+    ["Só em <planilha>", "O documento aparece em uma única planilha e em nenhuma outra."],
+    ["Ausente em <planilha>", "O documento existe em parte das planilhas e falta nas indicadas."],
+    ["Sem pendências", "O documento está em todas as planilhas carregadas e com status compatível."],
+    section("AS DEMAIS COLUNAS"),
+    ["EXISTE <planilha>", "Sim quando o documento foi encontrado naquela planilha; Não quando não foi."],
+    ["STATUS <planilha>", "O status lido na coluna que você mapeou daquela planilha. Vazio quando a planilha não tem status ou a linha está em branco."],
+    ...(planned ? [["ALOCADO", `Sim quando o documento consta em ${planned.label}; Não quando não consta.`]] : []),
+    ["PRESENÇA", "Em quantas das planilhas carregadas o documento foi encontrado."],
+    ["OBSERVAÇÕES", "O detalhe por extenso da situação: o que falta, onde diverge e se há linhas repetidas."],
+    ["LINHA DE ORIGEM", "O número da linha do documento na planilha original, para você conferir na fonte."],
+    ["INFORMAÇÕES COMPLEMENTARES", "As demais colunas que você marcou como relevantes no momento do mapeamento."],
+  ];
+  legend.addRows(legendRows);
+  legend.eachRow((row, rowNumber) => {
+    if (rowNumber <= 5) return;
+    row.alignment = { vertical: "top", wrapText: true };
+    const isSection = !text(row.getCell(2).value);
+    if (isSection) {
+      row.getCell(1).font = { bold: true, size: 11, color: { argb: white } };
+      row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } };
+      row.height = 22;
+      return;
+    }
+    row.getCell(1).font = { bold: true, color: { argb: navy } };
+    row.getCell(2).font = { size: 10, color: { argb: "52687B" } };
+  });
 
   return workbook;
 }

@@ -74,10 +74,14 @@ test("extrai registros com número da linha de origem e ignora linhas vazias", (
     document: "ET-5290.00-22000-912-1LV-001",
     status: "Aprovado",
     date: "10/02/2026",
+    dateValue: new Date(2026, 1, 10),
     extras: { Disciplina: "Elétrica" },
     rowNumber: 5,
   });
   assert.equal(records[2].rowNumber, 7);
+  // A data vem como Date, para o relatório exportar data ordenável no Excel.
+  assert.ok(records[1].dateValue instanceof Date);
+  assert.equal(records[1].dateValue.getDate(), 11);
 });
 
 test("cruza três planilhas reais e gera o relatório Excel completo", async () => {

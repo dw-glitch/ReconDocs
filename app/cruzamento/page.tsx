@@ -104,6 +104,7 @@ type CrossRow = {
   onlyGeneral: boolean;
   onlyPlanned: boolean;
   exclusiveIn: CrossSourceRef | null;
+  situation: { kind: string; label: string };
   observations: string;
 };
 
@@ -122,6 +123,7 @@ type CrossMetrics = {
   partial: number;
   missingGeneral: number;
   exclusive: number;
+  bySituation: Record<string, number>;
   perSource: Record<string, number>;
 };
 
@@ -381,8 +383,9 @@ function DetailPanel({ row, sources }: { row: CrossRow; sources: (CrossSourceRef
         );
       })}
       <div className="detail-block detail-wide">
-        <span className="detail-label">Observações</span>
-        <p className={row.statusDivergence || row.missingIn.length ? "difference-text" : ""}>{row.observations}</p>
+        <span className="detail-label">Situação</span>
+        <strong className={`situation-text situation-${row.situation.kind}`}>{row.situation.label}</strong>
+        <p>{row.observations}</p>
       </div>
     </div>
   );
@@ -543,19 +546,15 @@ export default function CrossCheckPage() {
         cell: (row) => (
           <>
             <strong className="document-code">{row.document}</strong>
-            <small>{row.presentIn.map((source) => source.label).join(" · ") || "Sem fonte"}</small>
+            <small>{row.presence.label} · {row.presentIn.map((source) => source.label).join(" · ") || "Sem fonte"}</small>
           </>
         ),
       },
       {
-        key: "presence",
-        header: "Presença",
-        width: 16,
-        cell: (row) => (
-          <span className={`status-badge status-${row.presence.kind === "all" ? "both" : row.presence.kind === "none" ? "not_found" : "unknown"}`}>
-            {row.presence.label}
-          </span>
-        ),
+        key: "situation",
+        header: "Situação",
+        width: 20,
+        cell: (row) => <span className={`status-badge situation-${row.situation.kind}`}>{row.situation.label}</span>,
       },
     ];
 
