@@ -45,6 +45,25 @@ export function labelFromFileName(fileName) {
 }
 
 /**
+ * Letra de coluna do Excel (A, B, ..., Z, AA, AB, ...) para o índice de
+ * coluna 0-based indicado, deslocada por `startCol` quando o intervalo usado
+ * da aba não começa na coluna A. É essa letra — não o nome do cabeçalho
+ * detectado — que identifica a coluna do documento, de status e de data no
+ * mapeamento: o cabeçalho pode ser ambíguo ou mal detectado, mas a coluna da
+ * planilha original é sempre a mesma.
+ */
+export function spreadsheetColumnLetter(index, startCol = 0) {
+  let value = startCol + index + 1;
+  let name = "";
+  while (value > 0) {
+    const rest = (value - 1) % 26;
+    name = String.fromCharCode(65 + rest) + name;
+    value = Math.floor((value - 1) / 26);
+  }
+  return name;
+}
+
+/**
  * Garante que duas planilhas não fiquem com o mesmo nome — dois arquivos de
  * mesmo nome gerariam colunas e abas indistinguíveis no relatório.
  */
