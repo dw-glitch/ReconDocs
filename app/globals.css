@@ -232,6 +232,7 @@ td:first-child small { display: block; margin-top: 5px; color: #8798a4; font-siz
 .extra-option input { width: 13px; height: 13px; flex: 0 0 auto; accent-color: var(--teal); }
 .extra-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .detected-warning { color: var(--amber); }
+.mapping-sample { display: block; margin-top: 2px; color: #8798a4; font-size: 9.5px; font-weight: 500; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot-identity { margin-top: 12px; padding-top: 11px; display: grid; gap: 9px; border-top: 1px solid #edf1f4; }
 .cross-table { min-width: 860px; table-layout: fixed; }
 .cross-table th:nth-child(n) { width: auto; }

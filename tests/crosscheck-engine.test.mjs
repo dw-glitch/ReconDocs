@@ -7,12 +7,14 @@ import {
   filterCrossRows,
 } from "../app/lib/crosscheck-engine.js";
 import {
+  countMappedRecords,
   detectHeaderRow,
   headerAliasScore,
   labelFromFileName,
   looksLikeDate,
   looksLikeIdentifier,
   profileRows,
+  sampleColumnValues,
   uniqueLabelAmong,
 } from "../app/lib/sheet-profile.js";
 
@@ -280,4 +282,50 @@ test("dois arquivos de mesmo nome viram planilhas com nomes distintos", () => {
   assert.equal(uniqueLabelAmong("Consulta Geral", ["Consulta Geral", "Consulta Geral (2)"]), "Consulta Geral (3)");
   // A comparação ignora a caixa, para não gerar dois nomes que se confundem.
   assert.equal(uniqueLabelAmong("consulta geral", ["Consulta Geral"]), "consulta geral (2)");
+});
+
+test("amostra de valores mostra exemplos distintos, na ordem de aparição", () => {
+  const rows = [
+    ["Documento", "Status"],
+    ["ET-001", "Aprovado"],
+    ["ET-002", "Aprovado"],
+    ["ET-001", "Reprovado"],
+    ["", "Vazio"],
+    ["ET-003", ""],
+  ];
+  const profile = profileRows(rows);
+  assert.deepEqual(sampleColumnValues(rows, profile.mapping.document, profile.dataStart), ["ET-001", "ET-002", "ET-003"]);
+  assert.deepEqual(sampleColumnValues(rows, profile.mapping.document, profile.dataStart, 1), ["ET-001"]);
+  // A amostra de uma coluna reflete a coluna inteira, independente do documento na mesma linha.
+  assert.deepEqual(sampleColumnValues(rows, profile.mapping.status, profile.dataStart), ["Aprovado", "Reprovado", "Vazio"]);
+});
+
+test("countMappedRecords conta o que recordFromRow realmente produziria", () => {
+  const rows = [
+    ["Documento", "Status"],
+    ["ET-001", "Aprovado"],
+    ["", "Sem documento"],
+    ["ET-002", ""],
+    ["Documento", ""], // repete o cabeçalho, não conta
+  ];
+  const profile = { rows, startRow: 0, ...profileRows(rows) };
+  assert.equal(countMappedRecords(profile), 2);
+});
+
+test("countMappedRecords é zero sem coluna de documento mapeada", () => {
+  const rows = [["Status"], ["Aprovado"], ["Reprovado"]];
+  const profile = { rows, startRow: 0, ...profileRows(rows) };
+  const withoutDocument = { ...profile, mapping: { ...profile.mapping, document: -1 } };
+  assert.equal(countMappedRecords(withoutDocument), 0);
+});
+
+test("countMappedRecords acusa zero quando a coluna mapeada não tem documentos", () => {
+  const rows = [
+    ["Item", "Documento", "Status"],
+    [1, "", "Aprovado"],
+    [2, "", "Reprovado"],
+  ];
+  const profile = { rows, startRow: 0, ...profileRows(rows) };
+  const forced = { ...profile, mapping: { ...profile.mapping, document: 1 } };
+  assert.equal(countMappedRecords(forced), 0);
 });

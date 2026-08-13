@@ -48,7 +48,7 @@ Carregue quantas planilhas precisar — não há limite de quantidade. Para cada
 - **Papel no cruzamento** — `Planilha comum` (padrão), `Base de referência` ou `Base de alocação`.
 - **Aba analisada** e o **mapeamento das colunas**: documento (obrigatório), status, data e quantas outras colunas relevantes forem marcadas.
 
-A aba, a linha de cabeçalho e as colunas são detectadas automaticamente em qualquer layout e podem ser corrigidas à mão.
+A aba, a linha de cabeçalho e as colunas são detectadas automaticamente em qualquer layout e podem ser corrigidas à mão. Cada seletor de coluna mostra até três valores reais daquela coluna, para mapear vendo o conteúdo em vez de adivinhar pelo nome do cabeçalho. Se a coluna escolhida como documento não trouxer nenhum registro, um aviso aparece na hora, antes de rodar o cruzamento.
 
 ### Papéis opcionais
 

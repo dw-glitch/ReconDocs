@@ -185,6 +185,41 @@ export function profileRows(rows, options = {}) {
 }
 
 /**
+ * Até `limit` valores distintos e não vazios de uma coluna, na ordem em que
+ * aparecem — usados para mostrar ao usuário o que uma coluna realmente
+ * contém, em vez de ele escolher apenas pelo nome do cabeçalho.
+ */
+export function sampleColumnValues(rows, column, dataStart, limit = 3) {
+  const seen = new Set();
+  const samples = [];
+  for (let index = dataStart; index < rows.length && samples.length < limit; index += 1) {
+    const value = text((rows[index] || [])[column]);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    samples.push(value);
+  }
+  return samples;
+}
+
+/**
+ * Quantos registros o mapeamento atual da aba produziria — a mesma regra de
+ * `recordFromRow`, mas contando em vez de montar cada registro. Serve para
+ * avisar cedo quando uma coluna mapeada não gera nenhum documento, sem
+ * esperar o cruzamento rodar.
+ *
+ * @param profile perfil completo da aba, incluindo `rows` (a matriz lida do
+ *   arquivo) além de `headers`, `mapping`, `dataStart` e `startRow`.
+ */
+export function countMappedRecords(profile) {
+  if (!profile || profile.mapping.document < 0) return 0;
+  let count = 0;
+  for (let index = profile.dataStart; index < profile.rows.length; index += 1) {
+    if (recordFromRow(profile, profile.rows[index] || [], index)) count += 1;
+  }
+  return count;
+}
+
+/**
  * Converte uma linha da planilha no registro usado pelo cruzamento.
  * Retorna `null` quando a linha não tem documento ou apenas repete o cabeçalho.
  *
