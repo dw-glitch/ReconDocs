@@ -50,6 +50,8 @@ Carregue quantas planilhas precisar — não há limite de quantidade. Para cada
 
 A aba, a linha de cabeçalho e as colunas são detectadas automaticamente em qualquer layout e podem ser corrigidas à mão. Cada seletor de coluna mostra até três valores reais daquela coluna, para mapear vendo o conteúdo em vez de adivinhar pelo nome do cabeçalho. Se a coluna escolhida como documento não trouxer nenhum registro, um aviso aparece na hora, antes de rodar o cruzamento.
 
+Corrigir o mapeamento manualmente fica salvo no navegador pelo layout de cabeçalhos: uma planilha atualizada diariamente com as mesmas colunas — caso dos Documentos Previstos — já chega mapeada da próxima vez, mesmo em um arquivo novo.
+
 ### Papéis opcionais
 
 Os dois papéis especiais são opcionais e existem só para quem precisa deles:

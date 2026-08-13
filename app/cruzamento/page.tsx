@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { countMappedRecords, labelFromFileName, profileRows, recordFromRow, sampleColumnValues, uniqueLabelAmong } from "../lib/sheet-profile";
+import { readMappingPreset, writeMappingPreset } from "../lib/mapping-presets";
 import { CROSS_ROLE_HINTS, CROSS_ROLE_LABELS, crossFilters, crossReference, filterCrossRows, MATCH_MODES } from "../lib/crosscheck-engine";
 import { createBrandLogoDataUrl } from "../lib/report-branding";
 import { buildCrossWorkbook } from "../lib/cross-report";
@@ -185,7 +186,9 @@ async function readCrossFile(file: File): Promise<CrossFile> {
       blankrows: true,
     }) as unknown[][];
     const profile = profileRows(rows, { columnLabel: (index: number) => `Coluna ${XLSX.utils.encode_col(range.s.c + index)}` });
-    return { name, rows, startRow: range.s.r, ...profile } as CrossSheetProfile;
+    const preset = typeof window !== "undefined" ? readMappingPreset(window.localStorage, profile.headers) : null;
+    const mapping = preset ? { ...profile.mapping, ...preset } : profile.mapping;
+    return { name, rows, startRow: range.s.r, ...profile, mapping } as CrossSheetProfile;
   });
   const withDocument = sheets.findIndex((sheet) => sheet.mapping.document >= 0 && sheet.rowCount > 0);
   return { fileName: file.name, fileSize: file.size, sheets, selectedSheet: Math.max(0, withDocument) };
@@ -449,6 +452,14 @@ export default function CrossCheckPage() {
       : slot);
   };
 
+  const updateSheetMapping = (id: string, transform: (sheet: CrossSheetProfile) => CrossSheetProfile) => {
+    updateSheet(id, (sheet) => {
+      const updated = transform(sheet);
+      if (typeof window !== "undefined") writeMappingPreset(window.localStorage, updated.headers, updated.mapping);
+      return updated;
+    });
+  };
+
   const handleFile = async (id: string, file: File) => {
     setError("");
     if (!/\.(xlsx|xls|xlsm|csv|tsv)$/i.test(file.name)) {
@@ -671,8 +682,8 @@ export default function CrossCheckPage() {
               onRemoveFile={() => updateSlot(slot.id, (item) => ({ ...item, file: undefined, label: item.renamed ? item.label : item.fallbackLabel }))}
               onRemoveSlot={() => { setSlots((current) => current.filter((item) => item.id !== slot.id)); invalidate(); }}
               onSheet={(selectedSheet) => updateSlot(slot.id, (item) => item.file ? { ...item, file: { ...item.file, selectedSheet } } : item)}
-              onMapping={(field, column) => updateSheet(slot.id, (sheet) => ({ ...sheet, mapping: { ...sheet.mapping, [field]: column } }))}
-              onExtras={(extras) => updateSheet(slot.id, (sheet) => ({ ...sheet, mapping: { ...sheet.mapping, extras } }))}
+              onMapping={(field, column) => updateSheetMapping(slot.id, (sheet) => ({ ...sheet, mapping: { ...sheet.mapping, [field]: column } }))}
+              onExtras={(extras) => updateSheetMapping(slot.id, (sheet) => ({ ...sheet, mapping: { ...sheet.mapping, extras } }))}
               onLabel={(label) => updateSlot(slot.id, (item) => ({ ...item, label, renamed: true }))}
               onRole={(role) => updateSlot(slot.id, (item) => ({ ...item, role }))}
             />
