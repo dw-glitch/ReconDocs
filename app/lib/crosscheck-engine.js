@@ -91,12 +91,42 @@ function presenceState(presentCount, totalSources) {
 }
 
 /**
+ * Divergências em colunas complementares (as marcadas como "outras colunas
+ * relevantes" no mapeamento) — a mesma ideia da divergência de status,
+ * generalizada para qualquer coluna que apareça com o mesmo nome em mais de
+ * uma planilha. Um documento com "Revisão" diferente em duas planilhas, por
+ * exemplo, aparece aqui mesmo que o status seja igual nas duas.
+ */
+function fieldDivergences(bySource, sources) {
+  const byField = new Map();
+  for (const source of sources) {
+    const entry = bySource[source.id];
+    if (!entry?.present) continue;
+    for (const extra of entry.extras) {
+      const key = norm(extra.label);
+      if (!key) continue;
+      if (!byField.has(key)) byField.set(key, { field: extra.label, entries: [] });
+      byField.get(key).entries.push({ id: source.id, label: source.label, value: extra.value });
+    }
+  }
+  const divergences = [];
+  for (const { field, entries } of byField.values()) {
+    if (entries.length < 2) continue;
+    const distinct = new Set(entries.map((entry) => norm(entry.value)).filter(Boolean));
+    if (distinct.size > 1) divergences.push({ field, entries });
+  }
+  return divergences;
+}
+
+/**
  * Situação da linha: um rótulo único, do mais grave para o mais brando, para
  * que dê para filtrar por ele tanto na tela quanto no Excel. As observações
  * continuam trazendo o detalhe completo.
  */
 function resolveSituation(row, sources, general, planned) {
   if (row.statusDivergence) return { kind: "divergent", label: "Divergência de status" };
+  if (row.fieldDivergences.length === 1) return { kind: "divergent", label: `Divergência em ${row.fieldDivergences[0].field}` };
+  if (row.fieldDivergences.length > 1) return { kind: "divergent", label: `Divergência em ${row.fieldDivergences.length} campos` };
   if (general && !row.existsGeneral) return { kind: "missing_reference", label: `Ausente em ${general.label}` };
   if (planned && !row.existsPlanned) return { kind: "not_allocated", label: "Não alocado" };
   if (sources.length > 1 && row.exclusiveIn) return { kind: "exclusive", label: `Só em ${row.exclusiveIn.label}` };
@@ -115,6 +145,9 @@ function buildObservations(row, sources, general, planned) {
   }
   if (row.statusDivergence) {
     notes.push(`Divergência de status: ${row.divergentStatuses.map((entry) => `${entry.label} “${entry.status}”`).join(" × ")}.`);
+  }
+  for (const divergence of row.fieldDivergences) {
+    notes.push(`Divergência em ${divergence.field}: ${divergence.entries.map((entry) => `${entry.label} “${entry.value}”`).join(" × ")}.`);
   }
   if (row.missingIn.length && sources.length > 1) {
     notes.push(`Ausente em: ${row.missingIn.map((source) => source.label).join(", ")}.`);
@@ -169,6 +202,8 @@ export function crossReference(sources = [], options = {}) {
       .filter((entry) => text(entry.status));
     const distinctStatuses = [...new Set(statusEntries.map((entry) => norm(entry.status)))];
     const statusDivergence = distinctStatuses.length > 1;
+    const rowFieldDivergences = fieldDivergences(bySource, list);
+    const hasDivergence = statusDivergence || rowFieldDivergences.length > 0;
 
     const existsGeneral = Boolean(general && bySource[general.id].present);
     const existsPlanned = Boolean(planned && bySource[planned.id].present);
@@ -195,6 +230,8 @@ export function crossReference(sources = [], options = {}) {
       statusEntries,
       statusDivergence,
       divergentStatuses: statusDivergence ? statusEntries : [],
+      fieldDivergences: rowFieldDivergences,
+      hasDivergence,
       otherStatuses: others
         .filter((source) => bySource[source.id].present && text(bySource[source.id].status))
         .map((source) => `${source.label}: ${bySource[source.id].status}`)
@@ -246,7 +283,7 @@ export function summarizeCross(rows, sources = []) {
     onlyPlanned: rows.filter((row) => row.onlyPlanned).length,
     allocated: planned ? inPlanned.length : 0,
     notAllocated: planned ? rows.length - inPlanned.length : 0,
-    divergences: rows.filter((row) => row.statusDivergence).length,
+    divergences: rows.filter((row) => row.hasDivergence).length,
     inAllSheets: sources.length > 1 ? rows.filter((row) => row.presence.kind === "all").length : rows.length,
     partial: rows.filter((row) => ["partial", "single"].includes(row.presence.kind)).length,
     exclusive: rows.filter((row) => row.presence.kind === "single").length,
@@ -261,6 +298,26 @@ export function summarizeCross(rows, sources = []) {
       rows.filter((row) => row.sources[source.id]?.present).length,
     ])),
   };
+}
+
+/**
+ * Segmentos da barra de sobreposição: em quantas planilhas cada documento
+ * aparece, em três faixas mutuamente exclusivas que somam o total. Funciona
+ * para qualquer quantidade de planilhas — com duas, "algumas" fica sempre
+ * zero (só existe "em todas" ou "exclusivo de uma"), como num diagrama de
+ * Venn clássico; com três ou mais, "algumas" cobre quem está em parte delas.
+ */
+export function overlapSegments(metrics) {
+  const total = metrics?.total || 0;
+  const all = metrics?.inAllSheets || 0;
+  const exclusive = metrics?.exclusive || 0;
+  const partial = Math.max(0, (metrics?.partial || 0) - exclusive);
+  const percent = (count) => (total ? Math.round((count / total) * 1000) / 10 : 0);
+  return [
+    { key: "all", label: "Em todas as planilhas", count: all, percent: percent(all) },
+    { key: "partial", label: "Em algumas planilhas", count: partial, percent: percent(partial) },
+    { key: "exclusive", label: "Exclusivos de uma planilha", count: exclusive, percent: percent(exclusive) },
+  ];
 }
 
 /**
@@ -294,7 +351,7 @@ export function filterCrossRows(rows, filter = "all", query = "") {
       || (filter === "only_planned" && row.onlyPlanned)
       || (filter === "not_allocated" && row.allocation.kind === "not_allocated")
       || (filter === "missing_general" && !row.existsGeneral)
-      || (filter === "divergent" && row.statusDivergence);
+      || (filter === "divergent" && row.hasDivergence);
     if (!matchesFilter) return false;
     if (!search) return true;
     return norm([

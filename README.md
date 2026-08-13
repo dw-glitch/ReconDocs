@@ -72,6 +72,10 @@ No processo SGP × SIGEM, por exemplo, a Consulta Geral entra como base de refer
 
 Para cada documento: em quais planilhas existe, o status em cada uma, o que está ausente e as observações da linha. Filtros: todos, em todas, em algumas, exclusivos e divergências — mais os filtros de referência e alocação quando esses papéis existirem. Os indicadores são gerados a partir das planilhas carregadas, um por planilha, com os nomes que você deu.
 
+Uma barra de sobreposição mostra em um segundo quanto do total está em todas as planilhas, em algumas ou é exclusivo de uma — o resumo visual do que hoje exigiria ler vários números separados.
+
+**Divergências não são só de status.** Qualquer coluna marcada como "outra coluna relevante" no mapeamento — Revisão, Responsável, o que for — que apareça com o mesmo nome em mais de uma planilha entra na comparação. Um documento com "Revisão" diferente entre duas planilhas aparece como `Divergência em Revisão`, com a mesma prioridade e o mesmo tratamento que uma divergência de status.
+
 ### Relatório Excel
 
 | Aba | Quando aparece | Conteúdo |
@@ -81,7 +85,7 @@ Para cada documento: em quais planilhas existe, o status em cada uma, o que est�
 | `Somente <base de referência>` | com base de referência | Documentos encontrados apenas nessa base |
 | `Somente <base de alocação>` | com base de alocação | Documentos encontrados apenas nessa base |
 | `Exclusivos por planilha` | quando há exclusivos fora dos papéis | Documentos presentes em uma única planilha, com o nome dela |
-| `Divergências` | sempre | Documentos com status diferente entre as planilhas |
+| `Divergências` | sempre | Documentos com o status ou outra coluna comparada diferente entre as planilhas, com a coluna `CAMPO DIVERGENTE` indicando qual |
 | `Planilhas Adicionais` | com planilhas além dos papéis | Detalhe por planilha |
 | `Como ler este relatório` | sempre | Legenda das abas, da coluna `Situação` e das demais colunas |
 
