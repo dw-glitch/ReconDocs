@@ -1,4 +1,4 @@
-import { canonicalId, norm, text } from "./analysis-engine.js";
+import { canonicalId, identityKey, norm, text } from "./analysis-engine.js";
 
 export const CROSS_ROLE_LABELS = {
   general: "Base de referência",
@@ -13,7 +13,7 @@ export const CROSS_ROLE_HINTS = {
 };
 
 export const MATCH_MODES = {
-  smart: "Inteligente (ignora extensão e revisão no fim do código)",
+  smart: "Inteligente (TAG, EAP, norma, extensão e revisão)",
   exact: "Exata (compara o texto normalizado)",
 };
 
@@ -23,7 +23,7 @@ export const MATCH_MODES = {
  * revisão colada ao código); `exact` apenas normaliza acentos, espaços e caixa.
  */
 export function crossKey(value, matchMode = "smart") {
-  return matchMode === "exact" ? norm(value) : canonicalId(value);
+  return matchMode === "exact" ? norm(value) : identityKey(value) || canonicalId(value);
 }
 
 function uniqueTexts(values) {
@@ -43,11 +43,11 @@ function mergeExtras(records) {
   return [...merged.entries()].map(([label, values]) => ({ label, value: [...values].join(" | ") }));
 }
 
-function summarizeSource(records) {
+function summarizeSource(records, allocationOnly = false) {
   const documents = uniqueTexts(records.map((record) => record.document));
-  const statuses = uniqueTexts(records.map((record) => record.status));
-  const dates = uniqueTexts(records.map((record) => record.date));
-  const extras = mergeExtras(records);
+  const statuses = allocationOnly ? [] : uniqueTexts(records.map((record) => record.status));
+  const dates = allocationOnly ? [] : uniqueTexts(records.map((record) => record.date));
+  const extras = allocationOnly ? [] : mergeExtras(records);
   return {
     present: true,
     count: records.length,
@@ -60,7 +60,7 @@ function summarizeSource(records) {
     dateValue: records.map((record) => record.dateValue).find((value) => value instanceof Date) || null,
     extras,
     extrasText: extras.map((extra) => `${extra.label}: ${extra.value}`).join("; "),
-    rows: records.map((record) => record.rowNumber).filter((row) => Number.isFinite(row)),
+    rows: allocationOnly ? [] : records.map((record) => record.rowNumber).filter((row) => Number.isFinite(row)),
     duplicated: records.length > 1,
     ambiguous: documents.length > 1 || statuses.length > 1,
   };
@@ -99,7 +99,7 @@ function presenceState(presentCount, totalSources) {
  */
 function fieldDivergences(bySource, sources) {
   const byField = new Map();
-  for (const source of sources) {
+  for (const source of sources.filter((item) => item.role !== "planned")) {
     const entry = bySource[source.id];
     if (!entry?.present) continue;
     for (const extra of entry.extras) {
@@ -190,7 +190,7 @@ export function crossReference(sources = [], options = {}) {
     const bySource = {};
     for (const source of list) {
       const records = group.bySource.get(source.id) || [];
-      bySource[source.id] = records.length ? summarizeSource(records) : { ...ABSENT_SOURCE };
+      bySource[source.id] = records.length ? summarizeSource(records, source.role === "planned") : { ...ABSENT_SOURCE };
     }
 
     const presentIn = list.filter((source) => bySource[source.id].present);
@@ -198,6 +198,7 @@ export function crossReference(sources = [], options = {}) {
     const document = presentIn.map((source) => bySource[source.id].document).find(Boolean) || group.display;
 
     const statusEntries = presentIn
+      .filter((source) => source.role !== "planned")
       .map((source) => ({ id: source.id, label: source.label, role: source.role, status: bySource[source.id].status }))
       .filter((entry) => text(entry.status));
     const distinctStatuses = [...new Set(statusEntries.map((entry) => norm(entry.status)))];
@@ -237,6 +238,7 @@ export function crossReference(sources = [], options = {}) {
         .map((source) => `${source.label}: ${bySource[source.id].status}`)
         .join("; "),
       complements: list
+        .filter((source) => source.role !== "planned")
         .filter((source) => bySource[source.id].extrasText)
         .map((source) => `${source.label} — ${bySource[source.id].extrasText}`)
         .join(" | "),

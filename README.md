@@ -29,12 +29,13 @@ O **ReconDocs** compara SGP e SIGEM. A planilha **Documentos Previstos** é usad
 - O resultado informa explicitamente se encontrou com `nt-`, sem `nt-` ou nas duas formas, identificando as fontes.
 - Documentos N-1710 não recebem a regra `nt-`.
 - Nenhum código, revisão, título, status ou detalhe de Documentos Previstos é exibido no relatório.
-- Diferenças entre SGP e SIGEM são mostradas ao lado da coluna correta: código, revisão, título ou status.
+- Diferenças entre SGP e SIGEM são mostradas ao lado da coluna correta: código e revisão.
+- Validação determinística baseada na ET-5290.00-22000-912-1LV-001, N-1710, sequência de revisão da N-2064 e transições do critério EAP fornecido.
 - Os arquivos são processados localmente no navegador.
 
 ### Relatório Excel
 
-A exportação cria as abas `Resumo`, `Todos`, `Diferenças`, `Não alocados`, `Revisar` e `Metodologia`. As colunas são agrupadas por assunto e comparam somente SGP e SIGEM; Documentos Previstos aparece apenas no resultado `Alocado?`.
+A exportação cria somente as abas `Resumo` e `Conferência`. A aba principal contém nove colunas: TAG, código e revisão do SGP, código e revisão do SIGEM, alocação, situação da postagem, diferença identificada e forma `nt-`. Documentos Previstos aparece somente como `Alocado` ou `Não alocado`.
 
 ## Módulo 2 — Cruzamento de planilhas (`/cruzamento`)
 
@@ -65,7 +66,7 @@ No processo SGP × SIGEM, por exemplo, a Consulta Geral entra como base de refer
 
 ### Comparação dos documentos
 
-- **Inteligente** (padrão) — ignora caminho, extensão e revisão colada ao fim do código.
+- **Inteligente** (padrão) — usa identidade normativa, TAG, EAP e forma `nt-`, além de ignorar caminho, extensão e revisão colada ao fim do código.
 - **Exata** — compara o texto normalizado (acentos, espaços e caixa).
 
 ### Resultado na tela
@@ -83,11 +84,9 @@ Uma barra de sobreposição mostra em um segundo quanto do total está em todas 
 | `Resumo Executivo` | sempre | Indicadores consolidados, total por planilha e critério de comparação |
 | `Resultado Consolidado` | sempre | Uma linha por documento: `Situação`, observações, presença, complementos e uma dupla `Existe`/`Status` por planilha; as colunas de referência e de alocação entram quando esses papéis existem |
 | `Somente <base de referência>` | com base de referência | Documentos encontrados apenas nessa base |
-| `Somente <base de alocação>` | com base de alocação | Documentos encontrados apenas nessa base |
 | `Exclusivos por planilha` | quando há exclusivos fora dos papéis | Documentos presentes em uma única planilha, com o nome dela |
 | `Divergências` | sempre | Documentos com o status ou outra coluna comparada diferente entre as planilhas, com a coluna `CAMPO DIVERGENTE` indicando qual |
 | `Planilhas Adicionais` | com planilhas além dos papéis | Detalhe por planilha |
-| `Como ler este relatório` | sempre | Legenda das abas, da coluna `Situação` e das demais colunas |
 
 Cada planilha aparece uma única vez no `Resultado Consolidado`: as que já têm coluna dedicada pelo papel não voltam no bloco por planilha, e colunas de status sem nenhum valor não são criadas.
 
@@ -119,3 +118,7 @@ Para validar:
 npm test        # build + testes de renderização e dos motores
 npm run test:engine   # somente os motores, sem build
 ```
+
+## Publicar na Vercel
+
+Importe a pasta do projeto e mantenha o comando de build padrão `npm run build`. O script chama o build do Next.js diretamente e não depende dos scripts da plataforma Sites.

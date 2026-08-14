@@ -1,56 +1,24 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const developmentPreviewMeta =
-  /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
-
-async function render(path) {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}-${path}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request(`http://localhost${path}`, { headers: { accept: "text/html" } }),
-    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
-    { waitUntil() {}, passThroughOnException() {} },
-  );
+async function rendered(route) {
+  const path = route === "/" ? "../.next/server/app/index.html" : `../.next/server/app${route}.html`;
+  return readFile(new URL(path, import.meta.url), "utf8");
 }
 
-test("renders development preview metadata", async () => {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  const response = await worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-
-  assert.equal(response.status, 200);
-  assert.match(
-    response.headers.get("content-type") ?? "",
-    /^text\/html\b/i,
-  );
-  assert.match(await response.text(), developmentPreviewMeta);
+test("renderiza a marca e as três entradas da conferência", async () => {
+  const html = await rendered("/");
+  assert.match(html, /RECON/);
+  assert.match(html, /DOCS/);
+  assert.match(html, /Lista do SGP/);
+  assert.match(html, /Consulta Geral do SIGEM/);
+  assert.match(html, /Documentos previstos/);
 });
 
-test("renders the spreadsheet cross-check module", async () => {
-  const response = await render("/cruzamento");
-
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-  const html = await response.text();
-  assert.match(html, /Cruzamento inteligente de planilhas/);
-  assert.match(html, /Consulta Geral/);
-  assert.match(html, /Documentos Previstos/);
+test("renderiza o módulo limpo de cruzamento", async () => {
+  const html = await rendered("/cruzamento");
+  assert.match(html, /Cruzamento de planilhas/);
+  assert.doesNotMatch(html, /Carregue quantas planilhas quiser/);
 });
+

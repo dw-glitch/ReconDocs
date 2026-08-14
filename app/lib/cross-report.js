@@ -63,13 +63,12 @@ function safeSheetName(name, used) {
 
 /**
  * Nomes das abas que o relatório terá para um dado cruzamento. As abas de
- * referência e de alocação só existem quando esses papéis foram atribuídos, e
- * levam o nome que o usuário deu à planilha.
+ * referência existe quando o papel foi atribuído. A base de alocação não ganha
+ * uma aba detalhada: dela o relatório expõe somente Sim/Não.
  */
 export function crossReportSheetNames(output) {
   const names = ["Resumo Executivo", "Resultado Consolidado"];
   if (output.generalLabel) names.push(`Somente ${output.generalLabel}`);
-  if (output.plannedLabel) names.push(`Somente ${output.plannedLabel}`);
   const dedicated = new Set([output.generalId, output.plannedId].filter(Boolean));
   if ((output.rows || []).some((row) => row.exclusiveIn && !dedicated.has(row.exclusiveIn.id))) {
     names.push("Exclusivos por planilha");
@@ -77,7 +76,6 @@ export function crossReportSheetNames(output) {
   names.push("Divergências");
   const extras = (output.sources || []).filter((source) => !dedicated.has(source.id));
   if (extras.length) names.push("Planilhas Adicionais");
-  names.push("Como ler este relatório");
   const used = new Set();
   return names.map((name) => safeSheetName(name, used));
 }
@@ -301,14 +299,6 @@ export function buildCrossWorkbook(output, options = {}) {
       paintExclusive,
     );
   }
-  if (planned) {
-    addDataSheet(
-      `Somente ${planned.label}`,
-      exclusiveColumns,
-      output.rows.filter((row) => row.onlyPlanned).map((row) => exclusiveRow(row, planned.id)),
-      paintExclusive,
-    );
-  }
 
   const remainingExclusives = output.rows.filter((row) => row.exclusiveIn && !dedicatedExists.has(row.exclusiveIn.id));
   if (remainingExclusives.length) {
@@ -379,66 +369,6 @@ export function buildCrossWorkbook(output, options = {}) {
       })));
     addDataSheet("Planilhas Adicionais", extraColumns, extraRows);
   }
-
-  // Aba final — Como ler este relatório
-  const legend = workbook.addWorksheet(safeSheetName("Como ler este relatório", usedNames), { views: [{ state: "frozen", ySplit: 5 }] });
-  legend.columns = [{ width: 38 }, { width: 96 }];
-  addReportBranding(legend, logoImageId, "B", "COMO LER ESTE RELATÓRIO", subtitle);
-  legend.getRow(5).values = ["Item", "O que significa"];
-  legend.getRow(5).height = 25;
-  legend.getRow(5).eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: white } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: teal } };
-    cell.alignment = { vertical: "middle", horizontal: "left" };
-  });
-
-  const section = (title) => [title, ""];
-  const legendRows = [
-    section("AS PLANILHAS CRUZADAS"),
-    ...output.sources.map((source) => [
-      source.label,
-      `${source.id === output.generalId ? "Base de referência. " : source.id === output.plannedId ? "Base de alocação. " : ""}${formatNumber(source.total)} documento(s) encontrado(s) nesta planilha.`,
-    ]),
-    ["Critério de comparação", MATCH_MODES[output.matchMode]],
-    section("AS ABAS"),
-    ["Resumo Executivo", "Os números consolidados do cruzamento, com o total por planilha."],
-    ["Resultado Consolidado", "Uma linha por documento, com a situação e a presença em cada planilha. É a aba para filtrar e trabalhar."],
-    ...(general ? [[`Somente ${general.label}`, `Documentos que existem em ${general.label} e em nenhuma outra planilha.`]] : []),
-    ...(planned ? [[`Somente ${planned.label}`, `Documentos que existem em ${planned.label} e em nenhuma outra planilha.`]] : []),
-    ...(remainingExclusives.length ? [["Exclusivos por planilha", "Documentos que aparecem em uma única planilha, indicando qual."]] : []),
-    ["Divergências", "Documentos com o status ou outra coluna comparada diferente entre as planilhas onde aparecem."],
-    ...(others.length ? [["Planilhas Adicionais", "Detalhe de cada documento nas planilhas fora dos dois papéis."]] : []),
-    section("A COLUNA SITUAÇÃO"),
-    ["Divergência de status", "O documento existe em mais de uma planilha, com status diferente entre elas. Verifique qual está correto."],
-    ["Divergência em <coluna>", "Uma coluna marcada como relevante no mapeamento (ex.: Revisão) tem valor diferente entre as planilhas. Mesma ideia da divergência de status, para qualquer outra coluna comparada."],
-    ...(general ? [[`Ausente em ${general.label}`, `O documento aparece em outra planilha, mas não em ${general.label}.`]] : []),
-    ...(planned ? [["Não alocado", `O documento não consta em ${planned.label}.`]] : []),
-    ["Só em <planilha>", "O documento aparece em uma única planilha e em nenhuma outra."],
-    ["Ausente em <planilha>", "O documento existe em parte das planilhas e falta nas indicadas."],
-    ["Sem pendências", "O documento está em todas as planilhas carregadas e com status compatível."],
-    section("AS DEMAIS COLUNAS"),
-    ["EXISTE <planilha>", "Sim quando o documento foi encontrado naquela planilha; Não quando não foi."],
-    ["STATUS <planilha>", "O status lido na coluna que você mapeou daquela planilha. Vazio quando a planilha não tem status ou a linha está em branco."],
-    ...(planned ? [["ALOCADO", `Sim quando o documento consta em ${planned.label}; Não quando não consta.`]] : []),
-    ["PRESENÇA", "Em quantas das planilhas carregadas o documento foi encontrado."],
-    ["OBSERVAÇÕES", "O detalhe por extenso da situação: o que falta, onde diverge e se há linhas repetidas."],
-    ["LINHA DE ORIGEM", "O número da linha do documento na planilha original, para você conferir na fonte."],
-    ["INFORMAÇÕES COMPLEMENTARES", "As demais colunas que você marcou como relevantes no momento do mapeamento."],
-  ];
-  legend.addRows(legendRows);
-  legend.eachRow((row, rowNumber) => {
-    if (rowNumber <= 5) return;
-    row.alignment = { vertical: "top", wrapText: true };
-    const isSection = !text(row.getCell(2).value);
-    if (isSection) {
-      row.getCell(1).font = { bold: true, size: 11, color: { argb: white } };
-      row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } };
-      row.height = 22;
-      return;
-    }
-    row.getCell(1).font = { bold: true, color: { argb: navy } };
-    row.getCell(2).font = { size: 10, color: { argb: "52687B" } };
-  });
 
   return workbook;
 }

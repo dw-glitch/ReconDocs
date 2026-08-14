@@ -190,8 +190,8 @@ td:first-child { overflow: hidden; }
 .document-code { display: block; overflow: hidden; color: var(--navy-dark); font-family: var(--font-geist-mono), monospace; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 td:first-child small { display: block; margin-top: 5px; color: #8798a4; font-size: 9px; }
 .status-badge { display: inline-flex; align-items: center; padding: 5px 8px; border-radius: 6px; font-size: 9.5px; font-weight: 700; line-height: 1.25; }
-.status-both, .status-allocated, .status-same_code { color: var(--teal); background: var(--teal-soft); }
-.status-sgp_only, .status-sigem_only, .status-missing_both, .status-not_found, .status-empty, .status-unproven, .status-unknown, .status-conflict, .status-changed_code, .status-both_forms { color: var(--amber); background: var(--amber-soft); }
+.status-both, .status-allocated, .status-same_code, .status-exact, .status-nt_variant, .status-normative_successor { color: var(--teal); background: var(--teal-soft); }
+.status-sgp_only, .status-sigem_only, .status-missing_both, .status-not_found, .status-empty, .status-unproven, .status-unknown, .status-conflict, .status-changed_code, .status-both_forms, .status-partial_forms, .status-same_tag, .status-eap_transition, .status-ambiguous_tag, .status-missing { color: var(--amber); background: var(--amber-soft); }
 .status-not_allocated, .status-not_posted { color: var(--red); background: var(--red-soft); }
 .difference-count, .no-difference { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 650; }
 .difference-count { color: var(--amber); }

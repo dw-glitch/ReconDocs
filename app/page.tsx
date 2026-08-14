@@ -3,7 +3,6 @@
 import { Fragment, useDeferredValue, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import ExcelJS from "exceljs";
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -26,7 +25,6 @@ import {
 import {
   analyzeDatasets,
   canonicalId,
-  documentKind,
   etDocumentSubtype,
   filterResults,
   norm,
@@ -35,7 +33,7 @@ import {
   summarizeResults,
   text,
 } from "./lib/analysis-engine";
-import { addReportBranding, createBrandLogoDataUrl } from "./lib/report-branding";
+import { exportAnalysisWorkbook } from "./lib/analysis-report";
 
 type Role = "sgp" | "sigem" | "planned";
 type DocumentScope = "all" | "et" | "cv" | "n1710";
@@ -112,7 +110,12 @@ type AnalysisItem = {
   planned: SourceSummary;
   presence: { kind: string; label: string };
   allocation: { kind: string; label: string; reason: string; evidence: string };
-  posting: { kind: string; label: string; detail: string; postedPlannedCodes: string[]; notPostedPlannedCodes: string[] };
+  posting: { kind: string; label: string; detail: string };
+  match: { kind: string; label: string; detail: string };
+  differenceDetail: string;
+  revisionComparison: { kind: string; label: string; detail: string; sgp: string; sigem: string; n2064: boolean };
+  n2064: { valid: boolean; detail: string };
+  normative: { kind: string; issues: string[]; eap?: string; eapCurrent?: string };
   documentTag: string;
   comparisons: FieldComparison[];
   differences: FieldComparison[];
@@ -138,6 +141,8 @@ type AnalysisMetrics = {
   notPosted: number;
   codeChanged: number;
   bothForms: number;
+  revisionChanged: number;
+  eapChanged: number;
 };
 
 type AnalysisOutput = { results: AnalysisItem[]; metrics: AnalysisMetrics };
@@ -212,6 +217,7 @@ const FILTERS = [
   ["not_posted", "Não postados"],
   ["changed", "Código alterado"],
   ["not_allocated", "Não alocados"],
+  ["review", "Revisar"],
 ] as const;
 
 function formatNumber(value: number) {
@@ -221,6 +227,25 @@ function formatNumber(value: number) {
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1).replace(".", ",")} MB`;
+}
+
+function analyzeInWorker(datasets: Record<Role, SpreadsheetRecord[]>): Promise<AnalysisOutput> {
+  if (typeof Worker === "undefined") return Promise.resolve(analyzeDatasets(datasets) as unknown as AnalysisOutput);
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./workers/analysis.worker.js", import.meta.url), { type: "module" });
+    const finish = () => worker.terminate();
+    worker.onmessage = (event) => {
+      finish();
+      if (event.data?.ok) resolve(event.data.output as AnalysisOutput);
+      else reject(new Error(event.data?.error || "Falha na análise."));
+    };
+    worker.onerror = () => {
+      finish();
+      try { resolve(analyzeDatasets(datasets) as unknown as AnalysisOutput); }
+      catch (error) { reject(error); }
+    };
+    worker.postMessage(datasets);
+  });
 }
 
 function normalizedHeader(value: unknown) {
@@ -374,124 +399,6 @@ async function recordsFromUpload(upload: UploadData, onProgress?: (done: number,
   return result;
 }
 
-function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
-
-function reportRow(item: AnalysisItem) {
-  return {
-    tag: item.documentTag,
-    codigoSgp: item.sgp.codes.join(" | "),
-    revisaoSgp: item.fieldComparisons.revision.values.sgp,
-    codigoAlocado: item.planned.codes.join(" | "),
-    alocado: item.allocation.label,
-    codigoSigem: item.sigem.codes.join(" | "),
-    revisaoSigem: item.fieldComparisons.revision.values.sigem,
-    situacaoPostagem: `${item.posting.label}. ${item.posting.detail}`.trim(),
-    diferenca: `${item.fieldComparisons.code.detail}; revisão: ${item.fieldComparisons.revision.detail}`,
-    formaNt: item.nt.label,
-  };
-}
-
-async function exportWorkbook(results: AnalysisItem[], metrics: AnalysisMetrics, scope: DocumentScope, etScope: EtScope) {
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "ReconDocs — Conferência SGP x SIGEM";
-  workbook.created = new Date();
-  workbook.modified = new Date();
-  workbook.subject = "Conferência de documentos e presença em Documentos Previstos";
-  workbook.title = "ReconDocs — Relatório de Conferência SGP x SIGEM";
-
-  const navy = "153A5C";
-  const teal = "0C7657";
-  const amber = "A56812";
-  const red = "A64035";
-  const pale = "F4F7F9";
-  const white = "FFFFFF";
-  const logoImageId = workbook.addImage({ base64: createBrandLogoDataUrl(), extension: "png" });
-
-  const summary = workbook.addWorksheet("Resumo", { views: [{ state: "frozen", ySplit: 5 }] });
-  summary.columns = [24, 16, 24, 16, 24, 16].map((width) => ({ width }));
-  addReportBranding(summary, logoImageId, "F", "RESUMO DA CONFERÊNCIA");
-  summary.getRow(5).values = ["Indicador", "Quantidade", "Indicador", "Quantidade", "Indicador", "Quantidade"];
-  summary.getRow(6).values = ["Tags analisados", metrics.total, "Postados no SIGEM", metrics.posted, "Alocados", metrics.allocated];
-  summary.getRow(7).values = ["Não postados", metrics.notPosted, "Código alterado", metrics.codeChanged, "Duas formas postadas", metrics.bothForms];
-  summary.getRow(8).values = ["Somente SGP", metrics.onlySgp, "Somente SIGEM", metrics.onlySigem, "Não alocados", metrics.notAllocated];
-  summary.getRow(9).values = ["Encontrados nas duas formas de nt-", metrics.ntAlternates, "", "", "", ""];
-  summary.getRow(10).values = ["Escopo analisado", scopeLabel(scope, etScope), "", "", "", ""];
-  summary.mergeCells("B10:F10");
-  summary.getCell("B10").alignment = { vertical: "middle", horizontal: "left", wrapText: true };
-  summary.getRow(10).height = 27;
-  summary.getRow(5).eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: white } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: teal } };
-    cell.alignment = { vertical: "middle", horizontal: "left" };
-  });
-  summary.getRow(5).height = 25;
-
-  const columns = [
-    { header: "TAG DO DOCUMENTO", key: "tag", width: 34 },
-    { header: "CÓDIGO NO SGP", key: "codigoSgp", width: 48 },
-    { header: "REVISÃO SGP", key: "revisaoSgp", width: 14 },
-    { header: "CÓDIGO ALOCADO (DOCUMENTOS PREVISTOS)", key: "codigoAlocado", width: 52 },
-    { header: "ALOCADO?", key: "alocado", width: 16 },
-    { header: "CÓDIGO POSTADO NO SIGEM", key: "codigoSigem", width: 48 },
-    { header: "REVISÃO SIGEM", key: "revisaoSigem", width: 14 },
-    { header: "SITUAÇÃO DA POSTAGEM", key: "situacaoPostagem", width: 72 },
-    { header: "DIFERENÇA SGP × SIGEM", key: "diferenca", width: 72 },
-    { header: "FORMA COM/SEM nt-", key: "formaNt", width: 28 },
-  ];
-
-  const addDataSheet = (name: string, items: AnalysisItem[]) => {
-    const sheet = workbook.addWorksheet(name, { views: [{ state: "frozen", ySplit: 5, xSplit: 1 }] });
-    sheet.columns = columns.map(({ key, width }) => ({ key, width }));
-    addReportBranding(sheet, logoImageId, "J", name.toUpperCase());
-    const header = sheet.getRow(5);
-    header.values = columns.map((column) => column.header);
-    header.height = 30;
-    header.eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: white } };
-      const differenceColumns = new Set([8, 9]);
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: differenceColumns.has(Number(cell.col)) ? amber : navy } };
-      cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
-    });
-    sheet.addRows(items.map(reportRow));
-    sheet.autoFilter = { from: "A5", to: "J5" };
-    sheet.eachRow((row, rowNumber) => {
-      if (rowNumber <= 5) return;
-      row.alignment = { vertical: "top", wrapText: true };
-      const allocationCell = row.getCell(5);
-      const postingCell = row.getCell(8);
-      const allocationKey = norm(allocationCell.value);
-      const postingKey = norm(postingCell.value);
-      const allocationColor = allocationKey === "ALOCADO" ? teal : allocationKey === "NAO ALOCADO" ? red : amber;
-      allocationCell.font = { bold: true, color: { argb: allocationColor } };
-      postingCell.font = { bold: true, color: { argb: postingKey.startsWith("NAO POSTADO") ? red : postingKey.includes("ALTERADO") || postingKey.includes("DUAS FORMAS") ? amber : teal } };
-      for (const columnIndex of [9]) {
-        const differenceCell = row.getCell(columnIndex);
-        const noDifference = norm(differenceCell.value) === "SEM DIFERENCA";
-        differenceCell.font = { bold: !noDifference, color: { argb: noDifference ? teal : amber } };
-      }
-      if ((rowNumber - 5) % 2 === 0) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: pale } };
-    });
-    return sheet;
-  };
-
-  addDataSheet("Conferência", results);
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  downloadBlob(
-    new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-    `ReconDocs_Conferencia_SGP_SIGEM_${scope}${scope === "et" ? `-${etScope}` : ""}_${new Date().toISOString().slice(0, 10)}.xlsx`,
-  );
-}
-
 function MappingSelect({ profile, field, onChange }: { profile: SheetProfile; field: FieldName; onChange: (index: number) => void }) {
   return (
     <label className="mapping-field">
@@ -595,11 +502,6 @@ function StatusBadge({ kind, label }: { kind: string; label: string }) {
   return <span className={`status-badge status-${kind}`}>{label}</span>;
 }
 
-function differenceCount(item: AnalysisItem) {
-  return [item.fieldComparisons.code, item.fieldComparisons.revision]
-    .filter((comparison) => comparison.kind === "different" || comparison.kind === "missing").length;
-}
-
 function DetailPanel({ item }: { item: AnalysisItem }) {
   return (
     <div className="detail-panel">
@@ -612,7 +514,7 @@ function DetailPanel({ item }: { item: AnalysisItem }) {
         <span className="detail-label">Códigos por fonte</span>
         <p><b>SGP:</b> {item.sgp.codes.join(" | ") || "Não localizado"}</p>
         <p><b>SIGEM:</b> {item.sigem.codes.join(" | ") || "Não localizado"}</p>
-        <p><b>Alocado:</b> {item.planned.codes.join(" | ") || "Não localizado"}</p>
+        <p><b>Documentos previstos:</b> {item.allocation.label}</p>
       </div>
       <div className="detail-block">
         <span className="detail-label">Revisão por fonte</span>
@@ -622,11 +524,10 @@ function DetailPanel({ item }: { item: AnalysisItem }) {
       </div>
       <div className="detail-block detail-wide">
         <span className="detail-label">Diferenças essenciais</span>
-        {[item.fieldComparisons.code, item.fieldComparisons.revision].map((comparison) => (
-          <p key={comparison.label} className={comparison.kind === "different" || comparison.kind === "missing" ? "difference-text" : ""}>
-            <b>{comparison.label}:</b> {comparison.detail}
-          </p>
-        ))}
+        <p className={item.match.kind === "exact" ? "" : "difference-text"}><b>Correspondência:</b> {item.match.label}. {item.match.detail}</p>
+        <p className={item.revisionComparison.kind === "different" || item.revisionComparison.kind === "missing" ? "difference-text" : ""}><b>Revisão:</b> {item.revisionComparison.detail}</p>
+        <p><b>N-2064:</b> {item.n2064.detail}</p>
+        {item.normative.issues.length > 0 && <p className="difference-text"><b>Validação normativa:</b> {item.normative.issues.join("; ")}</p>}
         <p><b>Forma nt-:</b> {item.nt.label}. {item.nt.explanation}</p>
       </div>
     </div>
@@ -720,8 +621,7 @@ export default function Home() {
         datasets[role] = records;
       }
       setProgress({ value: 88, label: "Ligando os códigos pelo mesmo tag" });
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      const completeOutput = analyzeDatasets(datasets) as unknown as AnalysisOutput;
+      const completeOutput = await analyzeInWorker(datasets);
       const scopedResults = completeOutput.results.filter((item) => {
         if (documentScope === "all") return true;
         if (item.documentKind !== documentScope) return false;
@@ -749,7 +649,12 @@ export default function Home() {
     setExporting(true);
     setError("");
     try {
-      await exportWorkbook(analysis.results, analysis.metrics, completedScope, completedEtScope);
+      await exportAnalysisWorkbook(
+        analysis.results,
+        analysis.metrics,
+        scopeLabel(completedScope, completedEtScope),
+        `${completedScope}${completedScope === "et" ? `-${completedEtScope}` : ""}`,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? `Não foi possível exportar: ${cause.message}` : "Não foi possível exportar o relatório.");
     } finally {
@@ -885,9 +790,9 @@ export default function Home() {
 
           <div className="insight-strip">
             <div><b>{formatNumber(analysis.metrics.bothForms)}</b><span>com as duas formas postadas</span></div>
-            <div><b>{formatNumber(analysis.metrics.notAllocated)}</b><span>não alocados</span></div>
-            <div><b>{formatNumber(analysis.metrics.onlySgp)}</b><span>somente no SGP</span></div>
-            <div><b>{formatNumber(analysis.metrics.ntAlternates)}</b><span>com/sem nt- entre as fontes</span></div>
+            <div><b>{formatNumber(analysis.metrics.revisionChanged)}</b><span>com diferença de revisão</span></div>
+            <div><b>{formatNumber(analysis.metrics.eapChanged)}</b><span>com transição de EAP</span></div>
+            <div><b>{formatNumber(analysis.metrics.review)}</b><span>para revisar</span></div>
           </div>
 
           <div className="results-card">
@@ -910,8 +815,8 @@ export default function Home() {
                   {visibleRows.map((item) => (
                     <Fragment key={item.id}>
                       <tr key={item.id} className={expanded === item.id ? "expanded-row" : ""} onClick={() => setExpanded(expanded === item.id ? null : item.id)} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setExpanded(expanded === item.id ? null : item.id); }}>
-                        <td><strong className="document-code">{item.documentTag}</strong><small>{item.documentKind === "et" ? "ET" : item.documentKind === "cv" ? "CV" : "N-1710"} · Rev. SGP: {item.fieldComparisons.revision.values.sgp || "vazio"} · SIGEM: {item.fieldComparisons.revision.values.sigem || "vazio"}</small></td>
-                        <td><StatusBadge kind={item.presence.kind} label={item.presence.label} /></td>
+                        <td><strong className="document-code">{item.documentTag}</strong><small>{item.documentKind === "et" ? "ET" : item.documentKind === "cv" ? "CV" : item.documentKind === "n1710" ? "N-1710" : "Não reconhecido"} · Rev. SGP: {item.revisionComparison.sgp || "vazio"} · SIGEM: {item.revisionComparison.sigem || "vazio"}</small></td>
+                        <td><StatusBadge kind={item.match.kind} label={item.match.label} /></td>
                         <td><StatusBadge kind={item.allocation.kind} label={item.allocation.label} /></td>
                         <td><StatusBadge kind={item.posting.kind} label={item.posting.label} /></td>
                         <td><span className={`nt-result nt-${item.nt.kind}`}>{item.nt.label}</span></td>

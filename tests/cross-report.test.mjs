@@ -54,10 +54,8 @@ test("o relatório traz as abas exigidas, na ordem, nomeadas pelas planilhas do 
     "Resumo Executivo",
     "Resultado Consolidado",
     "Somente Consulta Geral",
-    "Somente Documentos Previstos",
     "Divergências",
     "Planilhas Adicionais",
-    "Como ler este relatório",
   ]);
   assert.deepEqual(crossReportSheetNames(output), names);
 });
@@ -142,36 +140,20 @@ test("a data é exportada como data de verdade, não como texto", () => {
   assert.equal(cell.value.getDate(), 10);
 });
 
-test("a aba de legenda explica planilhas, abas, situações e colunas", () => {
+test("não cria a aba Como ler, mantendo o relatório enxuto", () => {
   const workbook = buildCrossWorkbook(sampleOutput(), { logoBase64: LOGO });
-  const legend = workbook.getWorksheet("Como ler este relatório");
-  const items = [];
-  legend.eachRow((row, rowNumber) => {
-    if (rowNumber > 5) items.push(String(row.getCell(1).value || ""));
-  });
-
-  assert.ok(items.includes("AS PLANILHAS CRUZADAS"));
-  assert.ok(items.includes("AS ABAS"));
-  assert.ok(items.includes("A COLUNA SITUAÇÃO"));
-  assert.ok(items.includes("AS DEMAIS COLUNAS"));
-  assert.ok(items.includes("Consulta Geral"));
-  assert.ok(items.includes("Divergência de status"));
-  assert.ok(items.includes("Ausente em Consulta Geral"));
-  assert.ok(items.includes("ALOCADO"));
-  assert.ok(items.includes("Resultado Consolidado"));
+  assert.equal(workbook.getWorksheet("Como ler este relatório"), undefined);
 });
 
-test("Abas 3 e 4 — listas exclusivas de cada base", () => {
+test("a base de alocação não ganha aba detalhada", () => {
   const workbook = buildCrossWorkbook(sampleOutput(), { logoBase64: LOGO });
   const onlyGeneral = workbook.getWorksheet("Somente Consulta Geral");
-  const onlyPlanned = workbook.getWorksheet("Somente Documentos Previstos");
 
   assert.deepEqual(values(onlyGeneral, 5).slice(0, 5), ["DOCUMENTO", "SITUAÇÃO", "STATUS", "DATA", "LINHA DE ORIGEM"]);
   assert.equal(onlyGeneral.rowCount, 6);
   assert.deepEqual(values(onlyGeneral, 6).slice(0, 5), ["DOC-003", "Não alocado", "Aprovado", "", "8"]);
 
-  assert.equal(onlyPlanned.rowCount, 6);
-  assert.equal(values(onlyPlanned, 6)[0], "DOC-900");
+  assert.equal(workbook.getWorksheet("Somente Documentos Previstos"), undefined);
 });
 
 test("Aba 5 — Divergências traz uma coluna de status por planilha", () => {
@@ -227,9 +209,7 @@ test("sem planilhas adicionais o relatório dispensa a aba extra", () => {
     "Resumo Executivo",
     "Resultado Consolidado",
     "Somente Consulta Geral",
-    "Somente Documentos Previstos",
     "Divergências",
-    "Como ler este relatório",
   ]);
 });
 
@@ -241,10 +221,8 @@ test("os títulos seguem o nome dado às planilhas, não um processo específico
   ]);
   const workbook = buildCrossWorkbook(output, { logoBase64: LOGO });
 
-  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name).slice(2, 4), [
-    "Somente Base Comercial",
-    "Somente Carteira 2026",
-  ]);
+  assert.equal(workbook.worksheets.map((sheet) => sheet.name)[2], "Somente Base Comercial");
+  assert.ok(!workbook.worksheets.some((sheet) => sheet.name === "Somente Carteira 2026"));
   const headers = values(workbook.getWorksheet("Resultado Consolidado"), 5);
   assert.deepEqual(headers.slice(0, 6), [
     "DOCUMENTO",
@@ -279,7 +257,6 @@ test("sem papéis atribuídos o relatório é puramente genérico", () => {
     "Exclusivos por planilha",
     "Divergências",
     "Planilhas Adicionais",
-    "Como ler este relatório",
   ]);
 
   const headers = values(workbook.getWorksheet("Resultado Consolidado"), 5);

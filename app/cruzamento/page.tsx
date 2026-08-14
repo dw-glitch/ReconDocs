@@ -430,8 +430,8 @@ function DetailPanel({ row, sources }: { row: CrossRow; sources: (CrossSourceRef
         return (
           <div key={source.id} className="detail-block">
             <span className="detail-label">{source.label}</span>
-            <strong>{entry?.present ? "Encontrado" : "Não encontrado"}</strong>
-            {entry?.present && (
+            <strong>{source.role === "planned" ? (entry?.present ? "Alocado" : "Não alocado") : (entry?.present ? "Encontrado" : "Não encontrado")}</strong>
+            {source.role !== "planned" && entry?.present && (
               <>
                 <p><b>Documento:</b> {entry.documents.join(" | ")}</p>
                 <p><b>Status:</b> {entry.status || "vazio"}</p>
@@ -717,14 +717,7 @@ export default function CrossCheckPage() {
 
       <section className="workspace-section" id="top" aria-labelledby="cross-title">
         <div className="section-heading">
-          <div>
-            <h1 id="cross-title">Cruzamento de planilhas</h1>
-            <p className="section-subtitle">
-              Carregue quantas planilhas quiser, de qualquer origem e layout, e cruze todas de uma vez. O módulo detecta as colunas
-              sozinho e você ajusta o que quiser. Opcionalmente, marque uma planilha como base de referência e outra como base de
-              alocação para ativar as colunas de <b>Existe</b> e <b>Alocado</b>.
-            </p>
-          </div>
+          <h1 id="cross-title">Cruzamento de planilhas</h1>
           <span className="upload-count">{loadedSlots.length} de {slots.length} prontas</span>
         </div>
 

@@ -155,8 +155,7 @@ test("liga códigos diferentes pelo mesmo tag e informa como foi alocado e posta
   assert.equal(analyzed.metrics.total, 1);
   assert.equal(analyzed.results[0].documentTag, "EMT-F-32501-PLA-3.200");
   assert.equal(analyzed.results[0].posting.kind, "changed_code");
-  assert.deepEqual(analyzed.results[0].posting.postedPlannedCodes, [withoutNt]);
-  assert.deepEqual(analyzed.results[0].posting.notPostedPlannedCodes, [withNt]);
+  assert.doesNotMatch(analyzed.results[0].posting.detail, /Documentos Previstos|Alocado e postado/);
   assert.equal(analyzed.results[0].fieldComparisons.revision.kind, "different");
 });
 
